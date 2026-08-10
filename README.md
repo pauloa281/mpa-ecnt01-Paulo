@@ -1,1 +1,3 @@
-# mpa-ecnt01-Paulo
+# Econometria Aplicada à Finanças
+
+**Estudante:** Paulo Aragão Daldegan
