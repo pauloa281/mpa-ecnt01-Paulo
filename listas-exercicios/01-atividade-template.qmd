@@ -1,0 +1,184 @@
+---
+lang: "pt-BR"
+title: "Atividade Prática 1 — Respostas"
+subtitle: "Econometria Aplicada à Finanças <br> Mestrado Profissional em Administração"
+author: "Paulo Aragão Daldegan"
+title-block-banner: "#27445C"
+date: 2026-08-04
+date-format: long
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-location: left
+    toc-title: "Navegação"
+    code-copy: true
+    fig-dpi: 300
+execute:
+  echo: true
+  warning: false
+  message: false
+engine: knitr
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+# Os pacotes devem ter sido instalados conforme as instruções da atividade.
+library(tidyverse)
+library(broom)
+library(car)
+library(POE5Rdata)
+
+# Carrega os dados usados na atividade.
+data("capm5", package = "POE5Rdata")
+
+# Visualizar os dados
+glimpse(capm5)
+names(capm5)
+```
+
+
+# Questão 1
+
+## A
+
+No modelo econométrico do CAPM, queremos entender a relação entre o retorno excedente de um ativo e o retorno excedente do mercado, ou seja, de uma variável dependente (retorno excedente ativo) e uma variável explicativa (retorno excedente do mercado). Teoricamente a função de regressão linear populacional (quando correta) coincide com a função de expectativa condicional, assim podemos pensar o modelo de regressão linear como uma aproximação do processo aleatório real que gerou os dados. No caso do CAPM, trata-se de uma regressão linear simples por termos apenas uma variável explicativa para uma variável dependente. O termo de erro é muito importante, pois ele irá capturar o que afeta a variável dependente que não está explícito no modelo, como variáveis relevantes omitidas, erros de medição da variável dependente e choques aleatórios.
+
+
+## B
+
+O bloco abaixo prepara os retornos excedentes e estima o modelo CAPM para Ford.
+Use-o como referência para estimar os modelos das demais empresas solicitadas na
+atividade.
+
+```{r}
+# Calcula os retornos excedentes das ações e da carteira de mercado.
+dados_capm <- capm5 |>
+  mutate(
+    ret_ge_excedente = ge - riskfree,
+    ret_ibm_excedente = ibm - riskfree,
+    ret_ford_excedente = ford - riskfree,
+    ret_msft_excedente = msft - riskfree,
+    ret_dis_excedente = dis - riskfree,
+    ret_xom_excedente = xom - riskfree,
+    ret_mkt_excedente = mkt - riskfree
+  )
+
+# Exemplo: estima o CAPM da Ford.
+capm_ford <- lm(ret_ford_excedente ~ ret_mkt_excedente, data = dados_capm)
+broom::tidy(capm_ford, conf.int = TRUE)
+```
+
+```{r}
+# Estime os modelos CAPM das demais empresas e organize os resultados.
+# Estima o CAPM da General Eletric.
+capm_ge <- lm(ret_ge_excedente ~ ret_mkt_excedente, data = dados_capm)
+broom::tidy(capm_ge, conf.int = TRUE)
+
+# Estima o CAPM da IBM.
+capm_ibm <- lm(ret_ibm_excedente ~ ret_mkt_excedente, data = dados_capm)
+broom::tidy(capm_ibm, conf.int = TRUE)
+
+# Estima o CAPM da Microsoft.
+capm_msft <- lm(ret_msft_excedente ~ ret_mkt_excedente, data = dados_capm)
+broom::tidy(capm_msft, conf.int = TRUE)
+
+# Estima o CAPM da Disney.
+capm_dis <- lm(ret_dis_excedente ~ ret_mkt_excedente, data = dados_capm)
+broom::tidy(capm_dis, conf.int = TRUE)
+
+# Estima o CAPM da Exxon-Mobil.
+capm_xom <- lm(ret_xom_excedente ~ ret_mkt_excedente, data = dados_capm)
+broom::tidy(capm_xom, conf.int = TRUE)
+
+```
+
+As estimativas dos Betas se mostraram diferentes para as empresas. As empresas mais defensivas (Beta < 1) são a IBM e a Exxon-Mobil (a mais defensiva); as empresas mais agressivas (Beta > 1) são a General Eletric, Ford (a mais agressiva) e Microsoft. Além delas, temos a Disney, que possui um Beta próximo de 1, sendo semelhante ao mercado. Essas conclusões podem ser inadequadas se não conhecermos a incerteza das estimativas, pois o beta é uma estimativa amostral. O verdadeiro parâmetro populacional Beta é desconhecido, portanto, precisamos saber também o erro-padrão da estimativa.
+
+
+## C
+
+Use os modelos estimados no item B para analisar os interceptos solicitados.
+
+```{r}
+# Exemplo: resultados do modelo da Ford, incluindo intervalo de confiança.
+broom::tidy(capm_ford, conf.int = TRUE)
+
+# Complete o código para General Electric e Exxon-Mobil.
+# General Eletric.
+broom::tidy(capm_ge, conf.int = TRUE)
+
+# Exxon-Mobil.
+broom::tidy(capm_xom, conf.int = TRUE)
+
+```
+
+Para Ford, temos um p-value (0.712) maior que $\alpha$, sendo assim não rejeitamos a hipótese nula de que o valor do intercepto é 0, mas isso não demonstra que o parâmetro seja igual ao valor hipotetizado. Para as ações da GE e Exxon-Mobil ocorre o mesmo, com $p-value > \alpha$.
+
+
+## E
+
+```{r}
+# Obtenha os intervalos de confiança dos betas de Exxon-Mobil e Microsoft.
+# Exxon-Mobil.
+broom::tidy(capm_xom, conf.int = TRUE)
+
+# Microsoft
+broom::tidy(capm_msft, conf.int = TRUE)
+
+```
+
+A Exxon-Mobil apresenta características defensivas em relação ao mercado. Seu beta estimado de 0,46 e seu intervalo de confiança de 95% entre (0,315 e 0,598)  permanece inteiramente abaixo de 1, demonstrando o grau de incerteza. Isso indica que a ação apresentou, no período analisado, menor sensibilidade às oscilações do mercado do que uma carteira de mercado. Já a Microsoft apresenta maior exposição ao risco sistemático, com beta próximo de 1,20, mas com um intervalo de confiança com valores abaixo de 1, demonstrando que seu comportamento é relativamente agressivo. Se o investidor procura algo mais defensivo comparado ao mercado, a Exxon-Mobil é mais indicada; se optar por ação mais agressiva, a Microsoft é mais indicada.
+
+
+## F
+
+```{r}
+# Exemplo: teste H0: beta da Ford = 1.
+car::linearHypothesis(capm_ford, "ret_mkt_excedente = 1")
+
+# Repita o teste para General Electric e Exxon-Mobil.
+
+# teste H0: beta da GE = 1.
+car::linearHypothesis(capm_ge, "ret_mkt_excedente = 1")
+
+# teste H0: beta da Exxon-Mobil = 1.
+car::linearHypothesis(capm_xom, "ret_mkt_excedente = 1")
+
+```
+
+Como o p-valor do teste F é 0,001632, inferior ao nível de significância de 5%, rejeita-se a hipótese nula. Portanto, há evidência estatística de que o beta da Ford é diferente de 1. Na ação da Exxon-Mobil, também rejeitamos a hipótese nula. No caso da General Eletric, seu p-valor do teste F é maior que o nível de siginificância de 5%, não podendo rejeitar a hipótese nula e assumindo que o $\beta = 1$, assim não há evidência suficiente para afirmar que seu beta difira do mercado. Um beta igual a 1 caracteriza uma ação com sensibilidade ao risco sistemático equivalente à carteira de mercado.
+
+
+## G
+
+```{r}
+# Obtenha o intervalo de confiança do beta da Exxon-Mobil.
+# Exxon-Mobil.
+broom::tidy(capm_xom, conf.int = TRUE)
+```
+
+No intervalo de confiança da Exxon-Mobil não há o valor 1, sendo assim seu Beta é inteiramente abaixo de 1. Os dados sugerem que as ações dessa empresa são totalmente defensivas. Economicamente, isso significa que a ação apresenta menor exposição ao risco sistemático do mercado e tende a ser menos sensível às oscilações do mercado do que uma carteira com beta igual a 1. 
+
+
+## H
+
+```{r}
+# Obtenha o intervalo de confiança do beta da Microsoft.
+# Microsoft
+broom::tidy(capm_msft, conf.int = TRUE)
+```
+
+O beta estimado da Microsoft é maior que 1, com intervalo de confiança de 95% passando pelo valor 1. Como o valor 1 está dentro desse intervalo, não há evidência estatística suficiente, ao nível de 5%, para afirmar que o beta seja maior que 1. Embora a estimativa pontual sugira uma ação agressiva, a inferência estatística indica que seu risco sistemático é compatível com o do mercado. Caso o beta seja efetivamente maior que 1, a ação responderá mais intensamente às oscilações do retorno da carteira de mercado.
+
+
+## I
+
+```{r}
+# Exemplo: R² ajustado do modelo da Ford.
+summary(capm_ford)$adj.r.squared
+```
+
+O resultado do $R^2 ajustado$ demonstra que o CAPM explica aproximadamente 26,19% da variação do prêmio de risco da Ford na amostra analisada. Isso mostra que o fator de mercado possui poder explicativo relevante, mas limitado, sobre os retornos excedentes da empresa. A maior parte da variação permanece não explicada pelo modelo, podendo estar associada a outros fatores. O $R^2 ajustado$ é melhor para comparações entre modelos com diferentes números de regressoras porque penaliza a inclusão de variáveis adicionais, evitando que a simples adição de regressoras faça o indicador aumentar. Assim, ele oferece uma medida mais criteriosa da capacidade explicativa quando a complexidade dos modelos varia.
