@@ -1,0 +1,293 @@
+---
+lang: "pt-BR"
+title: "Atividade Prática 2 — Respostas"
+subtitle: "Econometria Aplicada à Finanças <br> Mestrado Profissional em Administração"
+author: "Paulo Aragão Daldegan"
+title-block-banner: "#27445C"
+date: today
+date-format: long
+format: 
+  html:
+    embed-resources: true
+    toc: true
+    toc-location: left
+    toc-title: "Navegação"
+    code-copy: true
+    fig-dpi: 300
+execute:
+  echo: true
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+# Define a exibição dos números 
+options(digits = 5, scipen = 999)
+
+# Carrega o metapacote usado na atividade
+library(tidyverse)
+
+# Define o caminho relativo do arquivo CSV
+caminho_csv <- here::here("data/raw/data-ps1.csv")
+
+# Importa os dados
+life_df <- readr::read_csv(caminho_csv, show_col_types = FALSE)
+```
+
+
+## Questão 1
+
+
+**a.** 
+O $\hat{\beta}$ ser viesado de $\beta$ significa que ele não está representando o real valor do parâmetro populacional de $\beta$, ou seja, em média o estimador não acerta o valor verdadeiro de $\beta$.
+
+
+**b.** 
+$$viés = E(\hat{\beta}) - \beta$$
+O viés é a diferença entre o valor esperado do estimador e o verdadeiro parâmetro populacional.
+
+
+**c.** 
+Porque sempre procuramos representar o verdadeiro parâmetro populacional quando estimamos. Se o estimador estiver viesado, significa que não estamos representando corretamente, subestimando ou superestimando, os valores do verdadeiro parâmetro, podendo levar a conclusões equivocadas.
+
+**d.** 
+Os valores não viesados são os dos estimadores B e C, pois a expectativa da estimativa é igual ao verdadeiro Beta.
+
+
+**e.** 
+O estimador com a menor variância é o A, mas se trata de um estimador viesado.
+
+
+**f.** 
+O estimador B se mostrou o melhor, sendo não viesado e com uma variância menor comparado ao estimador C.
+
+
+**g.** 
+O erro padrão mede a incerteza ou variabilidade dos valores de um estimador entre diferentes amostras, ou seja, irá medir o quanto as estimativas irão variar em torno do verdadeiro parâmetro populacional $\beta$
+
+
+**h.** 
+Verdadeiro, pois a ausência de viés é uma propriedade definida em termos do valor esperado do estimador para um tamanho de amostra específico, enquanto a consistência é uma propriedade assintótica, relacionada ao comportamento do estimador quando n tende ao infinito.
+
+
+## Questão 2 
+
+
+**a.** 
+
+```{r}
+# Inspecione os dados e calcule as informações solicitadas.
+# Inspecionando os dados
+glimpse(life_df)
+
+# Número de observações
+nrow(life_df)
+
+# Número de Variáveis
+ncol(life_df)
+
+# Número de observações completas
+sum(complete.cases(life_df))
+
+# Número de condados distintos
+n_distinct(life_df$county_name)
+
+# Número de estados distintos
+n_distinct(life_df$state_abb)
+
+# Número de observações em cada quartil
+life_df |> 
+  count(income_quartile)
+
+# Valores ausentes em cada variável
+sum(colSums(is.na(life_df)))
+
+
+```
+
+
+
+**b.** 
+
+```{r}
+# Crie a variável high_income.
+life_df <- life_df |> 
+  mutate(
+    high_income = if_else(income_quartile == 4, 1, 0)
+  )
+
+```
+
+
+
+**c.** 
+
+```{r}
+# Calcule as estatísticas descritivas por quartil de renda.
+life_df |> 
+  group_by(income_quartile) |> 
+  summarise(
+    exp_vida_media = mean(life_exp),
+    exp_vida_sd = sd(life_exp),
+    taxa_tabagismo_media = mean(pct_smoke),
+    taxa_tabagismo_sd = sd(pct_smoke),
+    taxa_obesidade_media = mean(pct_obese),
+    taxa_obesidade_sd = sd(pct_obese),
+    taxa_exercicios_media = mean(pct_exercise),
+    taxa_exercicios_sd = sd(pct_exercise)
+    )
+
+```
+
+Podemos observar que os números são diferentes entre os quartis de renda. O quartil de renda 1 apresentou expectativa de vida média e taxa média de prática de exercícios menor que o quartil 4; por outro lado, apresentou maior taxa média de tabagismo e taxa média de obesidade, demonstrando que há uma diferença perceptível entre os 2 quartis de renda.
+
+
+**d.** 
+
+```{r}
+#| fig-cap: "Boxplots da expectativa de vida por grupo de renda e condição urbana."
+#| echo: false
+
+ggplot(
+  data = life_df,
+  aes(x = factor(income_quartile), y = life_exp, fill = factor(income_quartile))
+) +
+geom_boxplot(width = 0.55, alpha = 0.85, outlier.alpha = 0.4) +
+facet_wrap(
+  ~ is_urban,
+  labeller = as_labeller(c('0' = 'Condado não urbano', '1' = 'Condado urbano'))
+) +
+labs(
+    title = "Expectativa de vida por quartil de renda e condição urbana"
+) +
+scale_y_continuous('Expectativa de vida', labels = scales::comma) +
+scale_x_discrete(
+  'Quartil de renda',
+  labels = c('1' = 'Mais baixo', '4' = 'Mais alto')
+) +
+scale_fill_viridis_d(
+  option = 'mako',
+  begin = 0.25,
+  end = 0.75,
+  guide = 'none'
+) +
+theme_minimal(base_size = 12) +
+theme(axis.text.x = element_text(angle = 15, hjust = 1))
+```
+
+
+
+**e.** 
+
+```{r}
+#| fig-cap: "Gráfico de densidade das taxas de tabagismo por grupo de renda."
+#| echo: false
+
+ggplot(
+  data = life_df,
+  aes(x = pct_smoke, color = factor(income_quartile), fill = factor(income_quartile))
+) +
+geom_density(alpha = 0.35, linewidth = 0.9) +
+scale_x_continuous('Taxa de tabagismo', labels = scales::percent) +
+scale_y_continuous('Densidade', labels = scales::comma) +
+scale_color_viridis_d(
+  name = 'Quartil de renda',
+  labels = c('1 (mais baixo)', '4 (mais alto)'),
+  option = 'mako',
+  begin = 0.25,
+  end = 0.75
+) +
+scale_fill_viridis_d(
+  name = 'Quartil de renda',
+  labels = c('1 (mais baixo)', '4 (mais alto)'),
+  option = 'mako',
+  begin = 0.25,
+  end = 0.75
+) +
+theme_minimal(base_size = 12) +
+theme(legend.position = 'bottom')
+```
+
+
+
+**f.** 
+
+```{r}
+#| fig-cap: "Gráfico de dispersão entre expectativa de vida e taxa de tabagismo."
+#| echo: false
+
+ggplot(
+  data = life_df,
+  aes(x = pct_smoke, y = life_exp, color = factor(income_quartile))
+) +
+geom_point(alpha = 0.55, size = 1.5) +
+geom_smooth(method = 'lm', se = FALSE, linewidth = 1) +
+scale_x_continuous('Taxa de tabagismo', labels = scales::percent) +
+scale_y_continuous('Expectativa de vida', labels = scales::comma) +
+scale_color_viridis_d(
+  name = 'Quartil de renda',
+  labels = c('1 (mais baixo)', '4 (mais alto)'),
+  option = 'mako',
+  begin = 0.25,
+  end = 0.75
+) +
+theme_minimal(base_size = 12) +
+theme(legend.position = 'bottom')
+```
+
+
+
+**g.** 
+
+Os gráficos apresentados sugerem que há uma relação da expectativa de vida e da taxa de tabagismo com o quartil de renda em que o indivíduo se encontra. O quartil 1 de renda apresentou resultados piores que o quartil 4 de renda, onde a expectativa de vida é menor, indiferente se o condado é urbano ou não, e a taxa de tabagismo é maior quando comparados. O últiomo gráfico também sugere uma associação entre a expectativa de vida e a taxa de tabagismo, onde uma maior taxa de tabagismo apresenta uma menor expectativa de vida, tanto em um quartil quanto no outro.
+
+
+
+**h.**
+
+O gráfico f demonstra que o quartil de renda afeta na expectativa de vida, onde o quartil 1 está associado a uma diminuição e o quartil 4 a um aumento. Além disso, mostra uma relação também com a taxa de tabagismo, sendo o quartil 1 aumentando essa taxa e o quartil 4 diminuindo. Isso demonstra que o quartil de renda é relevante para as 2 variáveis, sendo assim sua ausência pode ocasionar um viés de variável omitida, fazendo com que $E(\hat\beta) \neq \beta$.
+
+
+**i.**
+
+Espera-se um viés para baixo na estimativa de MQO do coeficiente do tabagismo. Isso ocorre porque o grupo de renda está positivamente relacionado à expectativa de vida, mas negativamente relacionado ao tabagismo.
+
+
+**j.**
+
+```{r}
+# Estime os modelos simples e com controle para alta renda.
+reg_simples <- lm(life_exp ~ pct_smoke, data = life_df)
+reg_controle <- lm(life_exp ~ pct_smoke + high_income, data = life_df)
+
+# Organize os resultados em uma tabela.
+resultado_1 <- broom::tidy(reg_simples, conf.int = TRUE)
+resultado_2 <- broom::tidy(reg_controle, conf.int = TRUE)
+
+resultados <- bind_rows(resultado_1, resultado_2)
+knitr::kable(resultados)
+
+```
+
+
+**k.**
+
+Podemos observar que os valores dos Betas estimados foram diferentes, sendo a previsão feita na questão anterior se confirmando. A inclusão da variável dos quartis de renda diminuiu a intensidade negativa da relação entre tabagismo e expectativa de vida. Na regressão simples, um aumento de 10 pontos percentuais na taxa de tabagismo está associado a uma redução de 2,48 unidades na expectativa de vida. Após controlar por alta renda, esse mesmo aumento está associado a uma redução de apenas 0,46 unidade.
+
+
+**l.**
+
+```{r}
+# Estime o modelo que também controla para a condição urbana.
+reg_controle_condado <- lm(life_exp ~ pct_smoke + high_income + is_urban, data = life_df)
+broom::tidy(reg_controle_condado, conf.int = TRUE)
+
+
+```
+
+A inclusão da variável de condado urbano não alterou significativamente o valor da estimativa do $\beta_1$ associado ao tabagismo. Isso demonstra que o condado ser urbano ou não, não tem relação com a expectativa de vida e com o tabagismo, sendo assim a omissão dessa variável não parece ser uma fonte relevante de viés de variável omitida nesse modelo.
+
+
