@@ -1,0 +1,300 @@
+---
+lang: "pt-BR"
+title: "Atividade Prática 4 — Respostas"
+subtitle: "Econometria Aplicada à Finanças <br> Mestrado Profissional em Administração"
+author: "Paulo Aragão Daldegan"
+title-block-banner: "#27445C"
+date: today
+date-format: long
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-location: left
+    toc-title: "Navegação"
+    code-copy: true
+    fig-dpi: 300
+execute:
+  echo: true
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+# Define a exibição dos números
+options(digits = 5, scipen = 999)
+
+# Carrega o metapacote usado na atividade
+library(tidyverse)
+
+# Define o caminho relativo do arquivo CSV
+caminho_csv <- here::here("data/raw/data-ps1.csv")
+
+# Importa os dados
+life_df <- readr::read_csv(caminho_csv, show_col_types = FALSE)
+
+# Verificando os dados
+glimpse(life_df)
+
+```
+
+## Preparação dos dados
+
+Crie a variável `high_income` conforme solicitado no enunciado.
+
+```{r}
+# Cria o indicador de alta renda
+life_df <- life_df |>
+  dplyr::mutate(
+    high_income = dplyr::if_else(income_quartile == 4, 1, 0)
+  )
+```
+
+## Questão 1: Testando a presença de heterocedasticidade
+
+**a.** Estime o modelo do item **l** da Atividade Prática 2, construa o gráfico dos resíduos contra `pct_smoke` e interprete o diagnóstico visual.
+
+```{r}
+#| fig-cap: "Resíduos do modelo contra a taxa de tabagismo."
+
+# Estima o modelo do item l da Atividade Prática 2
+modelo_l <- stats::lm(
+  life_exp ~ pct_smoke + high_income + is_urban,
+  data = life_df
+)
+
+# Obtenha os resíduos e acrescente-os aos dados
+residual <- stats::residuals(modelo_l)
+life_df <- life_df |> 
+  mutate(residuals = residual)
+  
+
+# Construa o gráfico dos resíduos contra pct_smoke
+#| label: Resíduos contra pct_smoke
+#| fig-cap: "Resíduos contra pct_smoke"
+
+# Representa os erros verdadeiros em função do regressor
+ggplot(life_df, aes(x = pct_smoke, y = residuals)) +
+  geom_hline(yintercept = 0, linewidth = 0.4, color = "grey45") +
+  geom_point(color = "darkslategrey", alpha = 0.55) +
+  labs(x = "pct_smoke", y = "Resíduos") +
+  theme_minimal()
+
+
+```
+
+A dispersão vertical dos resíduos se concentram no lado esquerdo do gráfico, não mantendo uma dispersão constante ao longo dos valores de pct_smoke. Como a variância não aparenta ser constante e se concentra em um lado do gráfico, pode indicar heterocedasticidade.
+
+**b.** Mantida a exogeneidade, explique as consequências da heterocedasticidade para os estimadores dos coeficientes, os erros-padrão usuais e a eficiência do MQO.
+
+Com a hipótese de exogeneidade mantida, os estimadores dos coeficientes continuam sendo não viesados. Os erros-padrão são afetados pela presença de heterocedasticidade, comprometendo a inferência estatística, como os valores f e p e os intervalos de confiança. Com isso, mesmo não sendo viesado, a estimativa por MQO deixa de ser o estimador mais eficiente para essa amostra.
+
+**c.** Realize o teste de Goldfeld–Quandt. Apresente e interprete as hipóteses, a estatística, o valor-*p* e a decisão.
+
+```{r}
+# Execute o teste de Goldfeld–Quandt ordenado pela taxa de tabagismo
+resultado_gq <- lmtest::gqtest(
+  life_exp ~ pct_smoke + high_income + is_urban,
+  data = life_df,
+  order.by = ~ pct_smoke,
+  point = 0.5,
+  fraction = 1/3,
+  alternative = "two.sided"
+)
+
+
+# Exibe o resultado do teste
+resultado_gq
+
+```
+
+Obtemos no teste um p-valor = 0,021. Como o p-valor é inferior a 5%, rejeita-se a hipótese nula de homocedasticidade. Portanto, há evidências de heterocedasticidade no modelo, indicando que a variância dos erros se altera entre os segmentos da amostra associados a diferentes níveis de pct_smoke.
+
+**d.** Realize o teste de White. Apresente e interprete as hipóteses, a estatística, o valor-*p* e a decisão.
+
+```{r}
+# Execute o teste de White a partir do modelo estimado
+resultado_white <- whitestrap::white_test(modelo_l)
+
+# Exiba o resultado do teste
+resultado_white
+
+```
+
+No teste de white, obtivemos um p-valor < 0,001, inferior até a 1%. Com isso, rejeitamos a hipótese nula de homocedasticidade, apresentando evidências de heterocedasticidade. O teste de White fornece um teste mais geral.
+
+**e.** Os testes de Goldfeld–Quandt e de White precisam sempre concordar? Compare os resultados desta aplicação e explique.
+
+Nesta aplicação eles apresentaram o mesmo resultado, de rejeição da hipótese nula, mas nem sempre podem apresentar isso por testarem de formas diferentes. O Goldfeld–Quandt verifica se a variância dos resíduos se altera entre segmentos da amostra, enquanto o teste de White possui uma abordagem mais geral. Assim, pode ocorrer:
+
+- GQ rejeita e White não rejeita: existe uma mudança de variância captada pela divisão do GQ, mas que não produz evidência suficiente no teste de White, ou
+
+- White rejeita e GQ não rejeita: existe heterocedasticidade de uma forma mais geral, mas ela não é captada como uma diferença suficientemente clara entre os dois segmentos utilizados pelo GQ.
+
+
+## Questão 2: Convivendo com a heterocedasticidade
+
+**a.** Estime o modelo com interação entre tabagismo e alta renda, apresente os resultados, identifique os grupos comparados e interprete o termo de interação.
+
+```{r}
+# Estima o modelo com interação entre tabagismo e alta renda
+modelo_interacao <- stats::lm(
+  life_exp ~ pct_smoke * high_income + is_urban,
+  data = life_df
+)
+
+# Apresenta os resultados da estimação
+resultado <- broom::tidy(modelo_interacao)
+resultado
+
+```
+
+O resultado da regressão demonstra que a taxa de tabagismo está negativamente associada a expectativa de vida, além de que o quartil de renda mais alto apresenta associação positiva com a expectativa de vida, ambos estatisticamente significativos a 1%. O resultado para ser urbano não foi estatisticamente significativo, não demonstrando evidências com relação a expectativa de vida. A interação das variáveis se deu pela multiplicação de pct_smoke com high_income, com o resultado demonstrando que o aumento da taxa de tabagismo está associado a uma redução da expectativa de vida nos dois grupos, mas essa associação negativa é menor entre os municípios de alta renda, sendo o resultado estatisticamente significativo a 1%. 
+
+**b.** Substitua `high_income = 0` e `high_income = 1` na equação estimada,
+identifique a inclinação da relação entre tabagismo e expectativa de vida em
+cada grupo e interprete um aumento de dez pontos percentuais no tabagismo.
+
+```{r}
+# Calcula a inclinação do grupo de renda mais baixa (beta 1)
+inclinacao_baixa <- -6.068569
+
+# Calcula a inclinação do grupo de renda mais alta (beta 1 + beta 4)
+inclinacao_alta <- -6.068569 + 2.907757
+
+# Calcula as variações associadas a dez pontos percentuais
+variacao_10_baixa <- inclinacao_baixa * 0.10
+variacao_10_alta <- inclinacao_alta * 0.10
+
+tibble(
+  inclinacao_baixa = inclinacao_baixa,
+  inclinacao_alta = inclinacao_alta,
+  variacao_10_baixa = variacao_10_baixa,
+  variacao_10_alta = variacao_10_alta
+)
+
+```
+
+A partir dos resultados, nos municípios de baixa renda, um aumento de 10 p.p. no tabagismo está associado à redução de 0,61 na expectativa de vida, enquanto nos de alta renda a redução é de 0,32, indicando uma relação negativa mais forte no grupo de baixa renda.
+
+**c.** Calcule erros-padrão HC3 e compare a inferência sobre o termo de interação com a inferência usual.
+
+```{r}
+# Estima a matriz de covariância com a correção HC3
+vcov_hc3 <- sandwich::vcovHC(modelo_interacao, type = "HC3")
+
+# Calcula a inferência com a matriz HC3
+resultado_hc3 <- lmtest::coeftest(modelo_interacao, vcov. = vcov_hc3)
+
+# Compara a inferência usual e HC3 para o termo de interação
+resultado
+resultado_hc3
+
+```
+
+Com os erros-padrão usuais, o termo de interação é estatisticamente significativo p < 0,001. Após a correção HC3, o erro-padrão aumenta de 0,6158 para 0,7608 e a estatística t diminui de 4,72 para 3,82, fazendo o p-valor aumentar para 0,00014. Apesar da redução da significância estatística, o termo de interação permanece estatisticamente significativo a 1%, indicando que a relação entre tabagismo e expectativa de vida continua diferindo entre os grupos de renda mesmo após considerar a heterocedasticidade.
+
+**d.** Estime o modelo por MQP com `weights = pop`, calcule HC3 para os dois modelos e compare os resultados. Discuta também o significado da ponderação.
+
+```{r}
+# Estima o modelo ponderado pela população do condado
+modelo_mqp <- stats::lm(
+  life_exp ~ pct_smoke * high_income + is_urban,
+  data = life_df,
+  weights = pop
+)
+
+# Calcule a matriz HC3 e a inferência do modelo ponderado
+vcov_hc3_mqp <- sandwich::vcovHC(modelo_mqp, type = "HC3")
+resultado_hc3_mqp <- lmtest::coeftest(modelo_mqp, vcov. = vcov_hc3)
+
+# Compare os modelos não ponderado e ponderado com HC3
+resultado_hc3
+resultado_hc3_mqp
+
+# Reúna os modelos não ponderado e ponderado em uma lista nomeada
+modelos <- list(
+  "Modelo não ponderado" = resultado_hc3,
+  "Modelo ponderado" = resultado_hc3_mqp
+)
+
+# Reúna as respectivas matrizes HC3 em outra lista, na mesma ordem
+matrizes_vcov <- list(
+  vcov_hc3,
+  vcov_hc3_mqp
+)
+
+# Apresente os dois modelos lado a lado com modelsummary
+modelsummary::modelsummary(
+  models = modelos,
+  vcov = matrizes_vcov,
+  statistic = "({std.error})",
+  stars = TRUE,
+  fmt = 3
+)
+
+```
+
+Os resultados mostram que ponderar por pop altera as estimativas dos betas, pois atribui maior influência aos condados mais populosos. O WLS baseado no inverso da variância condicional define a influência das observações de outra maneira, buscando atribuir maior peso às observações estimadas com maior precisão, trazendo maior eficiência. Além disso, ponderar por pop não resolve automaticamente a heterocedasticidade; isso somente ocorreria se houvesse uma justificativa para que pop estivesse relacionada ao inverso da variância condicional dos erros.
+
+## Questão 3: Erros-padrão robustos a agrupamentos
+
+**a.** Explique por que os erros das duas observações pertencentes ao mesmo condado podem estar correlacionados.
+
+Admitir correlação entre os erros significa permitir que os termos de erro de diferentes observações não sejam independentes, ignorar isso pode dar uma falsa precisão das estimativas. Na estrutura desta base, as duas observações de um mesmo condado podem conter fatores não observados, como condições de saúde, infraestrutura, características socioeconômicas e geográficas, que afetam a expectativa de vida. Como esses fatores são comuns ao condado, os erros associados às duas observações podem apresentar correlação.
+
+**b.** Estime o modelo com erros-padrão robustos a agrupamentos e agrupamento por condado. Apresente os resultados.
+
+```{r}
+# Estima o modelo com erros-padrão robustos a agrupamentos por condado
+modelo_condado <- fixest::feols(
+  life_exp ~ pct_smoke * high_income + is_urban,
+  data = life_df,
+  vcov = ~ county_code
+)
+
+# Apresente os resultados
+modelo_condado
+
+```
+
+Os coeficientes betas permaneceram praticamente os mesmos, estatisticamente significativos a 1% (com excessão de condado urbano). Podemos observar também que mesmo permitindo correlação entre os erros das duas observações de um mesmo condado, permanece evidência de que a relação entre tabagismo e expectativa de vida difere entre os grupos de renda.
+
+**c.** Compare o agrupamento por condado com HC3 e avalie se as conclusões mudam.
+
+```{r}
+# Compare os erros-padrão HC3 e agrupados por condado
+resultado_hc3
+modelo_condado
+
+```
+
+Embora os erros-padrão tenham mudado um pouco, os coeficientes permaneceram inalterados e nenhuma conclusão de inferência foi modificada: pct_smoke, high_income e o termo de interação permanecem estatisticamente significativos, enquanto is_urban permanece não significativo. Portanto, o agrupamento por condado não altera as principais conclusões do modelo.
+
+**d.** Estime o modelo com agrupamento por estado e compare HC3, agrupamento por condado e agrupamento por estado.
+
+```{r}
+# Estima o modelo com erros-padrão robustos a agrupamentos por estado
+modelo_estado <- fixest::feols(
+  life_exp ~ pct_smoke * high_income + is_urban,
+  data = life_df,
+  vcov = ~ state_abb
+)
+
+
+# Compare os resultados das três matrizes de covariância
+resultado_hc3
+modelo_condado
+modelo_estado
+
+
+```
+
+No agrupamento por condado, admite-se correlação entre as duas observações pertencentes ao mesmo condado; no agrupamento por estado, a dependência pode ocorrer entre todas as observações de diferentes condados pertencentes ao mesmo estado. Um agrupamento mais abrangente não precisa necessariamente produzir erros-padrão maiores para todos os coeficientes, pois os erros-padrão clusterizados dependem da estrutura estimada de variância e covariância dentro dos clusters. Nesta aplicação, porém, o erro-padrão da interação aumentou de 0,713 para 1,278, reduzindo a estatística t de 4,08 para 2,27 e o nível de significância para 5% p = 0,027.
+
+**e.** Sintetize o que os resultados sugerem sobre tabagismo e expectativa de vida, mencionando viés de variável omitida, heterocedasticidade e agrupamento. Diferencie associação de causalidade e discuta a adequação da matriz de covariância.
+
+Os resultados indicam uma associação negativa entre tabagismo e expectativa de vida, que se mostra mais forte no grupo de menor renda, explicitado principalmente pela interação das variáveis pct_smoke e high_income. Essa relação não deve ser interpretada como causal, pois pode haver uma possível omissão de variáveis relevantes, podendo gerar viés nos coeficientes. Além disso, os testes indicaram heterocedasticidade e a estrutura da base permite correlação entre os erros dentro dos mesmos condados ou estados, não podendo assumir independência e variância constante. Os erros-padrão numericamente pequenos não garantem inferência confiável, pois se a matriz de variância-covariância for estimada sob hipóteses inadequadas, os erros-padrão, estatísticas de teste e valores-p podem estar incorretos, levando a conclusões equivocadas sobre a significância das associações encontradas.
