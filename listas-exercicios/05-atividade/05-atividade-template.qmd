@@ -1,0 +1,235 @@
+---
+lang: "pt-BR"
+title: "Atividade Prática 5 — Respostas"
+subtitle: "Econometria Aplicada à Finanças <br> Mestrado Profissional em Administração"
+author: "Paulo Aragão Daldegan"
+title-block-banner: "#27445C"
+date: today
+date-format: long
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-location: left
+    toc-title: "Navegação"
+    code-copy: true
+    fig-dpi: 300
+execute:
+  echo: true
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+# Define a exibição dos números
+options(digits = 5, scipen = 999)
+
+# Carrega os pacotes necessários
+library(here)
+library(tidyverse)
+library(lmtest)
+library(sandwich)
+
+# Define o caminho relativo do arquivo CSV
+caminho_csv <- here::here("data/raw/data-ps2.csv")
+
+# Importa os dados
+dados <- readr::read_csv(caminho_csv, show_col_types = FALSE)
+
+# Cria as variações mensais
+dados <- dados |>
+  mutate(
+    diff_housing = housing - lag(housing),
+    diff_mr = mortgage_rate - lag(mortgage_rate),
+    diff_industry = industry - lag(industry),
+    diff_unemp = unemp - lag(unemp)
+  )
+```
+
+# Questão 1: Autocorrelação e inferência
+
+## **a.** Estimação do modelo
+
+Estime por MQO o modelo especificado no enunciado utilizando `lm()` e armazene
+o resultado em um objeto denominado `modelo`.
+
+```{r}
+#| label: q1a-modelo
+
+# Estime o modelo
+
+modelo <- lm(diff_housing ~ diff_mr + diff_industry + diff_unemp, dados)
+broom::tidy(modelo)
+
+```
+
+Interprete economicamente o coeficiente de `diff_mr` e classifique o modelo
+como estático ou dinâmico, justificando sua resposta.
+
+O coeficiente da variação mensal da taxa hipotecária (diff_mr) demonstra que o aumento de 1 ponto percentual na taxa pode ocasiornar em uma diminuição de, aproximadamente, 41,6 mil unidades de novas construções,mas não é estatisticamente significativo a 5%. O modelo é estático, pois não há defasagem em nenhuma das variáveis, ou seja, a variação das condições macroeconômicas no mês t é utilizada para explicar a variação das novas construções no mesmo mês t.
+
+## **b.** Diagnóstico da autocorrelação
+
+Examine a FAC dos resíduos:
+
+```{r}
+#| label: q1b-fac
+
+# Exibe a FAC dos resíduos
+acf(residuals(modelo))
+```
+
+Com base no gráfico, avalie a presença de autocorrelação e o sinal sugerido
+nas primeiras defasagens.
+
+A partir do gráfico, temos indícios de autocorrelação, onde as autocorrelações alternam de sinal e indicam sinal negativo.
+
+Realize o teste de Breusch–Godfrey para autocorrelação de primeira ordem.
+Apresente as hipóteses, o resultado, a decisão para $\alpha=5\%$ e sua
+interpretação.
+
+**Dica:** utilize `lmtest::bgtest()` com `order = 1`.
+
+```{r}
+#| label: q1b-breusch-godfrey
+
+# Execute o teste de Breusch–Godfrey
+lmtest::bgtest(modelo, order = 1)
+
+```
+
+As hipóteses para o teste de Breusch-Godfrey são:
+
+- valor $𝑝<𝛼$: rejeitamos $H_0$; há evidência de autocorrelação;
+- valor$𝑝≥𝛼$: não rejeitamos $H_0$; não há evidência suficiente de autocorrelação até a ordem p.
+  
+Ao executar o teste, obtives um valor $p < 0,05$, rejeitando a hipótese nula. Portanto há evidências de autocorrelação de primeira ordem. O teste é somente um diagnóstico da autocorrelação, assim a resposta adequada depende de sua causa, das hipóteses que estamos dispostos a assumir e do objetivo da análise.
+
+## **c.** Inferência com erros-padrão de Newey–West
+
+Calcule a inferência com erros-padrão de Newey–West conforme especificado no
+enunciado.
+
+Armazene:
+
+- o estimador da matriz de covariância em `vcov_nw`;
+- o resultado de `lmtest::coeftest()` em `resultado_nw`.
+
+Use `prewhite = FALSE` e `adjust = TRUE`.
+
+```{r}
+#| label: q1c-newey-west
+
+# Estime a matriz de covariância Newey-West
+vcov_nw <- sandwich::NeweyWest(modelo, prewhite = FALSE, adjust = TRUE)
+
+# Calcule a inferência com Newey-West
+resultado_nw <- lmtest::coeftest(modelo, vcov. = vcov_nw)
+
+# Apresente os resultados
+resultado_nw
+
+```
+
+Explique por que os coeficientes permanecem os mesmos, por que os erros-padrão
+podem mudar e por que Newey–West é adequado ao problema diagnosticado.
+
+Os coeficientes permanecem os mesmo após a correção, pois a correção é robusta a heterocedasticidade e a autocorrelação, o que Newey–West modifica é a matriz de variância-covariância dos estimadores. Com isso, o que pode mudar são os erros-padrão e a inferência, pois em MQO são calculados sob hipóteses de ausência de autocorrelação dos erros. Newey–West é uma resposta adequada porque fornece erros-padrão robustos à heterocedasticidade e à autocorrelação de forma bastante geral, assim a inferência passa a refletir a dependência temporal existente nos resíduos.
+
+## **d.** Comparando a inferência
+
+Compare a inferência convencional de MQO com a inferência obtida utilizando
+erros-padrão de Newey–West.
+
+```{r}
+#| label: q1d-comparacao
+
+# Obtém a inferência convencional
+resultado_conv <- lmtest::coeftest(modelo)
+
+# Calcula os intervalos de confiança de 95%
+ic_conv <- lmtest::coefci(modelo)
+
+ic_nw <- lmtest::coefci(
+  modelo,
+  vcov. = vcov_nw
+)
+
+# Organiza os resultados para comparação
+comparacao <- tibble(
+  coeficiente = rownames(resultado_conv),
+  estimativa = resultado_conv[, "Estimate"],
+  ep_convencional = resultado_conv[, "Std. Error"],
+  ic95_conv_inferior = ic_conv[, 1],
+  ic95_conv_superior = ic_conv[, 2],
+  p_convencional = resultado_conv[, "Pr(>|t|)"],
+  ep_newey_west = resultado_nw[, "Std. Error"],
+  ic95_nw_inferior = ic_nw[, 1],
+  ic95_nw_superior = ic_nw[, 2],
+  p_newey_west = resultado_nw[, "Pr(>|t|)"]
+)
+
+# Formata os valores-p para apresentação
+comparacao_exibicao <- comparacao |>
+  mutate(
+    p_convencional = format.pval(
+      p_convencional,
+      digits = 3,
+      eps = 0.001
+    ),
+    p_newey_west = format.pval(
+      p_newey_west,
+      digits = 3,
+      eps = 0.001
+    )
+  )
+
+# Apresenta os resultados
+knitr::kable(
+  comparacao_exibicao,
+  digits = 3,
+  caption = paste(
+    "Comparação entre a inferência convencional (MQO)",
+    "e a inferência de Newey–West."
+  )
+)
+```
+
+Com base na comparação:
+
+1. as estimativas dos coeficientes mudaram quando utilizamos Newey–West?
+   Explique;
+
+2. os erros-padrão mudaram todos na mesma direção? Identifique pelo menos um
+   coeficiente cujo erro-padrão aumentou e um cujo erro-padrão diminuiu, caso
+   isso ocorra;
+
+3. compare os intervalos de confiança convencionais com os intervalos obtidos
+   com Newey–West. Houve mudanças relevantes na incerteza associada às
+   estimativas?
+
+4. alguma conclusão inferencial é alterada ao utilizar Newey–West,
+   considerando $\alpha=5\%$?
+
+5. escolha **um coeficiente** e faça uma interpretação conjunta de:
+
+   * sua magnitude;
+   * sua incerteza;
+   * seu intervalo de confiança;
+   * sua evidência estatística.
+
+Não limite sua interpretação à comparação do valor-$p$ com o nível de
+significância.
+
+1. Não, nenhuma estimativa dos coeficientes mudou, pois a correção de Newey-West não altera as estimativas dos betas, mas pode alterar os erros-padrão das estimativas.
+
+2. Os erros-padrão não mudaram na mesma direção. Os erros-padrão do intercepto e de diff_mr diminuiram após a correção; já os de diff_industry e diff_unemp aumentaram após a correção.
+
+3. Houve mudanças relacionadas aos intervalos de confiança, mas tendo pequenas modificações nos valores. Algo que chamou a atenção foi que o intervalo de confiança de diff_mr passou a ser todo negativo e estatisticamente significativo a 5%.
+
+4. Sim, como citado acima, o p_valor de diff_mr passou a ser menor que $\alpha$, passando a ser estatisticamente significativo a 5%.
+
+5. O coeficiente de diff_mr é negativo e economicamente relevante, indicando uma associação entre aumentos da taxa hipotecária e reduções nas novas construções residenciais. A estimativa pontual permanece −41,604 nos dois procedimentos, mas a incerteza estimada diminui quando utilizamos os erros-padrão de Newey–West. Com isso, o intervalo de confiança passa de um intervalo que contém zero para um intervalo inteiramente negativo, e a evidência estatística passa de não significativa a 5% para significativa nesse nível. Ainda assim, o resultado deve ser interpretado como associação condicional, e não como evidência de um efeito causal da taxa hipotecária sobre as novas construções.
