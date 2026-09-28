@@ -1,0 +1,314 @@
+---
+title: "Diagnóstico do modelo linear — roteiro computacional"
+author: "Paulo Aragão Daldegan"
+
+format:
+  html:
+    toc: true
+    embed-resources: true
+
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+# Carrega os pacotes necessários.
+library(tidyverse)
+library(POE5Rdata)
+library(wooldridge)
+
+# Carrega os dados utilizados no roteiro.
+data("gpa1", package = "wooldridge")
+data("rice5", package = "POE5Rdata")
+data("koop_tobias_87", package = "POE5Rdata")
+data("PublicSchools", package = "sandwich")
+```
+
+Este roteiro acompanha a execução dos códigos da Aula 7. Execute os blocos na
+ordem apresentada.
+
+# Representação matricial e MQO
+
+Estime o modelo com `gpa1` e examine a matriz construída pelo R.
+
+```{r}
+#| label: modelo-gpa1
+
+# Estima o modelo usado na representação matricial.
+modelo <- lm(colGPA ~ hsGPA + ACT, data = gpa1)
+
+# Extrai a matriz do modelo construída a partir da fórmula.
+X <- model.matrix(modelo)
+
+head(X, 5)
+```
+
+Calcule os coeficientes diretamente pela expressão matricial do MQO.
+
+```{r}
+#| label: mqo-formula-matricial
+
+# Define o vetor da variável dependente.
+y <- gpa1$colGPA
+
+# Calcula X'X e X'y.
+XtX <- t(X) %*% X
+Xty <- t(X) %*% y
+
+# Calcula os coeficientes pela expressão matricial do MQO.
+beta_formula <- solve(XtX) %*% Xty
+beta_formula
+```
+
+Repita o cálculo com `crossprod()`.
+
+```{r}
+#| label: mqo-crossprod
+
+# Calcula os coeficientes usando produtos cruzados.
+beta_crossprod <- solve(crossprod(X)) %*% crossprod(X, y)
+beta_crossprod
+```
+
+Compare o condicionamento de $\mathbf{X}$ e de $\mathbf{X}^{\mathsf T}\mathbf{X}$.
+
+```{r}
+#| label: condicionamento-matrizes
+
+# Calcula os números de condição com base nos valores singulares.
+kappa_X <- kappa(X, exact = TRUE)
+kappa_XtX <- kappa(crossprod(X), exact = TRUE)
+
+kappa_X
+kappa_XtX
+kappa_X^2
+```
+
+Obtenha os coeficientes pela decomposição QR e compare-os com `lm()`.
+
+```{r}
+#| label: mqo-qr
+
+# Calcula a decomposição QR e obtém os coeficientes de MQO.
+qr_X <- qr(X)
+beta_qr <- qr.coef(qr_X, y)
+
+cbind(
+  `QR explícita` = beta_qr,
+  `lm()` = coef(modelo)
+)
+```
+
+# Multicolinearidade
+
+Use as observações de 1994 de `rice5` para estimar a função de produção.
+
+```{r}
+#| label: modelo-rice-1994
+
+# Mantém apenas as observações de 1994.
+rice_1994 <- rice5 |>
+  filter(year == 1994)
+
+# Estima a função de produção.
+modelo_arroz <- lm(
+  log(prod) ~ log(area) + log(labor) + log(fert),
+  data = rice_1994
+)
+
+# Exibe os resultados e o coeficiente de determinação.
+broom::tidy(modelo_arroz)
+broom::glance(modelo_arroz) |>
+  select(r.squared)
+```
+
+Estime a regressão auxiliar para `labor` e calcule seu VIF manualmente.
+
+```{r}
+#| label: vif-labor
+
+# Estima a regressão auxiliar para log(labor).
+aux_labor <- lm(
+  log(labor) ~ log(area) + log(fert),
+  data = rice_1994
+)
+
+# Recupera o R² auxiliar e calcula o VIF.
+r2_labor <- broom::glance(aux_labor)$r.squared
+vif_labor <- 1 / (1 - r2_labor)
+
+r2_labor
+vif_labor
+```
+
+Calcule os VIFs das três regressoras.
+
+```{r}
+#| label: vifs-modelo-arroz
+
+# Calcula os VIFs do modelo completo.
+car::vif(modelo_arroz)
+```
+
+Compare a evidência individual com o teste conjunto para `area` e `labor`.
+
+```{r}
+#| label: teste-conjunto-arroz
+
+# Testa conjuntamente os coeficientes de log(area) e log(labor).
+car::linearHypothesis(
+  modelo_arroz,
+  c(
+    "log(area) = 0",
+    "log(labor) = 0"
+  )
+)
+```
+
+# Multicolinearidade e especificação do modelo
+
+Compare o coeficiente da educação antes e depois da inclusão de `score` como
+proxy para habilidade.
+
+```{r}
+#| label: modelos-controles
+
+# Estima o modelo sem a proxy para habilidade.
+modelo_sem_score <- lm(
+  log(wage) ~ educ + exper + I(exper^2),
+  data = koop_tobias_87
+)
+
+# Inclui o escore de aptidão como proxy para habilidade.
+modelo_com_score <- lm(
+  log(wage) ~ educ + exper + I(exper^2) + score,
+  data = koop_tobias_87
+)
+
+# Compara os coeficientes estimados para educação.
+round(coef(modelo_sem_score)["educ"], 4)
+round(coef(modelo_com_score)["educ"], 4)
+```
+
+# Diagnósticos gráficos dos resíduos
+
+Simule uma relação quadrática e compare os resíduos de duas especificações.
+
+```{r}
+#| label: simular-forma-quadratica
+
+# Torna a simulação reprodutível.
+set.seed(123)
+
+# Simula dados segundo uma média condicional quadrática.
+n <- 200
+x <- runif(n, -3, 3)
+erro <- rnorm(n)
+y <- 1 + x + x^2 + erro
+dados_forma <- data.frame(x = x, y = y)
+
+# Estima os modelos sem e com o termo quadrático.
+modelo_linear <- lm(y ~ x, data = dados_forma)
+modelo_quadratico <- lm(y ~ x + I(x^2), data = dados_forma)
+```
+
+```{r}
+#| label: residuos-forma-quadratica
+
+# Compara os diagnósticos das duas especificações.
+plot(modelo_linear, which = 1)
+plot(modelo_quadratico, which = 1)
+```
+
+**Observe:** acompanhe como a curvatura dos resíduos se modifica quando o termo
+quadrático é incluído.
+
+Simule uma relação cúbica e repita o diagnóstico.
+
+```{r}
+#| label: simular-forma-cubica
+
+# Torna a simulação reprodutível.
+set.seed(789)
+
+# Simula dados segundo uma média condicional cúbica.
+n_cubico <- 200
+x_cubico <- runif(n_cubico, -2, 2)
+erro_cubico <- rnorm(n_cubico, mean = 0, sd = 0.6)
+y_cubico <- 1 + x_cubico + x_cubico^3 + erro_cubico
+dados_cubico <- data.frame(x = x_cubico, y = y_cubico)
+
+# Estima os modelos sem e com o termo cúbico.
+modelo_cubico_linear <- lm(y ~ x, data = dados_cubico)
+modelo_cubico <- lm(y ~ x + I(x^3), data = dados_cubico)
+```
+
+```{r}
+#| label: residuos-forma-cubica
+
+# Compara os diagnósticos das duas especificações.
+plot(modelo_cubico_linear, which = 1)
+plot(modelo_cubico, which = 1)
+```
+
+**Observe:** compare a estrutura dos resíduos antes e depois de representar a
+forma cúbica da média condicional.
+
+# Normalidade dos erros: papel na inferência e diagnóstico
+
+Estime o modelo com `PublicSchools` e obtenha os resíduos padronizados.
+
+```{r}
+#| label: modelo-public-schools
+
+# Mantém somente as observações completas.
+ps <- na.omit(PublicSchools)
+
+# Estima o modelo usado no diagnóstico de normalidade.
+ps_lm <- lm(Expenditure ~ Income, data = ps)
+
+# Calcula os resíduos padronizados.
+ps_lm_residuos_pad <- rstandard(ps_lm)
+```
+
+Produza os dois gráficos Q-Q utilizados na aula.
+
+```{r}
+#| label: qq-public-schools-base
+
+# Produz o gráfico Normal Q-Q de diagnóstico do modelo.
+plot(ps_lm, which = 2)
+```
+
+```{r}
+#| label: qq-public-schools-ggpubr
+
+# Produz o Q-Q dos resíduos padronizados com faixa de confiança.
+ggpubr::ggqqplot(ps_lm_residuos_pad) +
+  xlab("Quantis teóricos da distribuição normal") +
+  ylab("Resíduos padronizados")
+```
+
+Aplique os testes de normalidade apresentados nos slides.
+
+```{r}
+#| label: testes-normalidade
+
+# Extrai os resíduos do modelo.
+ps_lm_residuos <- residuals(ps_lm)
+
+# Aplica o teste de Shapiro-Wilk.
+shapiro.test(ps_lm_residuos)
+
+# Aplica o teste clássico de Jarque-Bera.
+DescTools::JarqueBeraTest(
+  ps_lm_residuos,
+  robust = FALSE,
+  method = "chisq"
+)
+```

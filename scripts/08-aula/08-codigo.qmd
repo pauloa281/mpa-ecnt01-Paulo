@@ -1,0 +1,587 @@
+---
+title: "Econometria Aplicada à Finanças <br> Aula 8"
+subtitle: "Influência, regressão robusta e regressão quantílica"
+langi: pt-BR
+author: "Paulo Aragão Daldegan"
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+# Configura a exibição de números.
+options(digits = 5, scipen = 999)
+
+# Carrega os pacotes utilizados ao longo do roteiro.
+library(tidyverse)
+library(AER)
+```
+
+
+# Introdução
+
+Este roteiro acompanha a execução dos códigos da Aula 8. Execute os blocos na
+ordem apresentada.
+
+
+# Diagnósticos de influência
+
+Carregue os dados, mantenha as observações completas e estime o modelo.
+
+```{r}
+#| label: modelo-public-schools
+
+# Carrega os dados utilizados nos diagnósticos de influência.
+data("PublicSchools", package = "sandwich")
+
+# Remove a observação incompleta e estima a regressão linear simples.
+ps <- na.omit(PublicSchools)
+ps_lm <- lm(Expenditure ~ Income, data = ps)
+
+# Exibe os resultados da regressão estimada.
+summary(ps_lm)
+```
+
+Obtenha a matriz do modelo e calcule explicitamente a matriz $H$.
+
+```{r}
+#| label: matriz-h
+
+# Extrai a matriz do modelo construída a partir da fórmula.
+X <- model.matrix(ps_lm)
+
+# Exibe as dimensões da matriz do modelo.
+dim(X)
+
+# Exibe os nomes das colunas da matriz do modelo.
+colnames(X)
+
+# Calcula a matriz H e extrai seus elementos diagonais.
+H <- X %*% solve(crossprod(X)) %*% t(X)
+hii_matriz <- diag(H)
+
+# Exibe os primeiros valores da diagonal de H.
+head(hii_matriz)
+```
+
+Compare a diagonal de $H$ com os valores fornecidos por `hatvalues()`.
+
+```{r}
+#| label: alavancagem-hatvalues
+
+# Obtém diretamente os valores de alavancagem do modelo.
+hii <- hatvalues(ps_lm)
+
+# Exibe os primeiros valores de alavancagem.
+head(hii)
+
+# Verifica a equivalência entre os dois cálculos.
+all.equal(hii_matriz, hii)
+```
+
+Calcule a referência prática e identifique as observações que a ultrapassam.
+
+```{r}
+#| label: referencia-alavancagem
+
+# Obtém o tamanho da amostra e o número de variáveis explicativas.
+n <- nrow(X)
+p <- ncol(X) - 1
+
+# Calcula a referência prática para alta alavancagem.
+limite_h <- 2 * (p + 1) / n
+
+# Exibe o valor da referência prática.
+limite_h
+
+# Organiza e identifica as observações acima da referência.
+alavancagem_ps <- tibble(
+  Observação = names(hii),
+  Alavancagem = as.numeric(hii)
+)
+
+# Mostra as observações acima da referência de alavancagem.
+alavancagem_ps |>
+  filter(Alavancagem > limite_h) |>
+  arrange(desc(Alavancagem))
+```
+
+Essa referência é uma regra de triagem, não um teste formal nem uma regra de
+exclusão.
+
+Calcule e compare os resíduos padronizados e studentizados externamente.
+
+```{r}
+#| label: residuos-padronizados-studentizados
+
+# Calcula os dois tipos de resíduos usados no diagnóstico.
+rpad <- rstandard(ps_lm)
+rstud <- rstudent(ps_lm)
+
+# Exibe os primeiros valores dos dois tipos de resíduos.
+head(
+  cbind(
+    Padronizado = rpad,
+    Studentizado = rstud
+  )
+)
+```
+
+Aplique a referência prática para resíduos studentizados incomuns.
+
+```{r}
+#| label: referencia-residuos-studentizados
+
+# Organiza os resíduos studentizados por observação.
+residuos_studentizados <- tibble(
+  Observação = names(rstud),
+  `Resíduo studentizado` = as.numeric(rstud)
+)
+
+# Identifica as observações para as quais |r_i^*| ultrapassa 2.
+residuos_studentizados |>
+  filter(abs(`Resíduo studentizado`) > 2) |>
+  arrange(desc(abs(`Resíduo studentizado`)))
+```
+
+Calcule DFBETAS e examine a sensibilidade de cada coeficiente.
+
+```{r}
+#| label: dfbetas-public-schools
+
+# Calcula DFBETAS e sua referência prática.
+dfbetas_ps <- dfbetas(ps_lm)
+limite_dfbetas <- 2 / sqrt(n)
+
+# Exibe a referência prática para DFBETAS.
+limite_dfbetas
+
+# Mostra as observações sinalizadas em pelo menos um coeficiente.
+dfbetas_ps[
+  apply(abs(dfbetas_ps) > limite_dfbetas, 1, any),
+  ,
+  drop = FALSE
+]
+
+# Compara os casos destacados na aula.
+dfbetas_ps[c("Alaska", "Utah"), ]
+```
+
+Uma observação pode ser influente para um coeficiente e não para outro.
+
+Calcule DFFITS e identifique as observações sinalizadas.
+
+```{r}
+#| label: dffits-public-schools
+
+# Calcula DFFITS e sua referência prática.
+dffits_ps <- dffits(ps_lm)
+limite_dffits <- 2 * sqrt((p + 1) / n)
+
+# Exibe a referência prática para DFFITS.
+limite_dffits
+
+# Identifica as observações que ultrapassam a referência.
+dffits_ps[abs(dffits_ps) > limite_dffits]
+```
+
+Reúna os diagnósticos dos quatro casos usados na aula.
+
+```{r}
+#| label: comparacao-diagnosticos
+#| results: asis
+
+# Organiza os diagnósticos calculados para todas as observações.
+diagnosticos_ps <- tibble(
+  Observação = rownames(ps),
+  `Resíduo studentizado` = as.numeric(rstud),
+  Alavancagem = as.numeric(hii),
+  `DFBETAS: intercepto` = dfbetas_ps[, "(Intercept)"],
+  `DFBETAS: Income` = dfbetas_ps[, "Income"],
+  DFFITS = as.numeric(dffits_ps)
+)
+
+# Seleciona os quatro casos usados para comparar os diagnósticos.
+casos_ps <- diagnosticos_ps |>
+  filter(Observação %in% c("Alaska", "Mississippi", "Nevada", "Utah")) |>
+  slice(match(c("Alaska", "Mississippi", "Nevada", "Utah"), Observação))
+
+# Exibe os diagnósticos dos quatro casos selecionados.
+casos_ps |>
+  mutate(across(where(is.numeric), ~ sprintf("%.4f", .x))) |>
+  knitr::kable(
+    col.names = c(
+      "Observação",
+      "$r_i^*$",
+      "$h_{ii}$",
+      "DFBETAS $\\beta_0$",
+      "DFBETAS `Income`",
+      "DFFITS"
+    ),
+    align = c("l", rep("c", 5)),
+    escape = FALSE
+  )
+```
+
+**Observe:** resíduo incomum, alta alavancagem e influência são características
+relacionadas, mas distintas. As referências servem para investigação, não para
+exclusão automática.
+
+Faça a análise de sensibilidade retirando Alaska.
+
+```{r}
+#| label: sensibilidade-alaska
+
+# Remove Alaska da amostra.
+ps_sem_alaska <- ps |>
+  as_tibble(rownames = "Observação") |>
+  filter(Observação != "Alaska")
+
+# Reestima o modelo sem Alaska.
+ps_lm_sem_alaska <- lm(
+  Expenditure ~ Income,
+  data = ps_sem_alaska
+)
+
+# Compara os coeficientes estimados com e sem Alaska.
+cbind(
+  `Amostra completa` = coef(ps_lm),
+  `Sem Alaska` = coef(ps_lm_sem_alaska)
+)
+```
+
+Reproduza graficamente as duas retas ajustadas.
+
+```{r}
+#| label: grafico-sensibilidade-alaska
+#| fig-width: 9
+#| fig-height: 5.4
+
+# Prepara os dados e a grade de valores para as duas retas.
+ps_grafico <- tibble::rownames_to_column(ps, "Observação")
+
+grade_income <- tibble(
+  Income = seq(
+    min(ps$Income),
+    max(ps$Income),
+    length.out = 100
+  )
+)
+
+# Calcula os valores ajustados com e sem Alaska.
+grade_ps <- bind_rows(
+  tibble(
+    Income = grade_income$Income,
+    Expenditure = predict(ps_lm, newdata = grade_income),
+    Modelo = "Amostra completa"
+  ),
+  tibble(
+    Income = grade_income$Income,
+    Expenditure = predict(ps_lm_sem_alaska, newdata = grade_income),
+    Modelo = "Sem Alaska"
+  )
+)
+
+# Compara as duas retas ajustadas.
+ggplot(ps_grafico, aes(x = Income, y = Expenditure)) +
+  geom_point(color = "grey45") +
+  geom_text(
+    data = filter(ps_grafico, Observação == "Alaska"),
+    aes(label = Observação),
+    nudge_y = 18,
+    color = "#e64173",
+    size = 4
+  ) +
+  geom_line(
+    data = grade_ps,
+    aes(color = Modelo),
+    linewidth = 1
+  ) +
+  scale_color_manual(values = c("#314f4f", "#e64173")) +
+  labs(
+    x = "Renda",
+    y = "Gasto por estudante",
+    color = NULL
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+
+
+
+# Regressão robusta
+
+Carregue `OECDGrowth` e estime a mesma especificação por MQO e por `lmrob()`.
+
+```{r}
+#| label: modelos-solow
+
+# Carrega os dados usados no exemplo.
+data("OECDGrowth", package = "AER")
+
+# Define a especificação comum aos dois procedimentos.
+formula_solow <-
+  log(gdp85 / gdp60) ~ log(gdp60) + log(invest) + log(popgrowth + 0.05)
+
+# Estima o modelo por mínimos quadrados ordinários.
+solow_lm <- lm(formula_solow, data = OECDGrowth)
+
+# Estima a mesma especificação com o procedimento robusto.
+solow_robusta <- robustbase::lmrob(
+  formula_solow,
+  data = OECDGrowth,
+  setting = "KS2014"
+)
+```
+
+MQO e `lmrob()` usam a mesma especificação; o procedimento de estimação é que
+muda.
+
+Examine os resultados e os intervalos de confiança do ajuste robusto.
+
+```{r}
+#| label: inferencia-lmrob
+
+# Exibe coeficientes, erros-padrão, estatísticas t e valores-p.
+summary(solow_robusta)
+
+# Calcula os intervalos de confiança de 95%.
+confint(solow_robusta)
+```
+
+Compare os coeficientes estimados pelos dois procedimentos.
+
+```{r}
+#| label: comparacao-coeficientes-solow
+
+# Organiza os coeficientes em uma única tabela.
+comparacao_coeficientes <- data.frame(
+  Termo = names(coef(solow_lm)),
+  MQO = unname(coef(solow_lm)),
+  `lmrob (KS2014)` = unname(coef(solow_robusta)),
+  check.names = FALSE
+)
+
+# Exibe os coeficientes estimados pelos dois procedimentos.
+comparacao_coeficientes
+```
+
+Observe como os pesos robustos modificam a contribuição das observações.
+
+```{r}
+#| label: pesos-robustos-solow
+
+# Extrai e ordena os pesos de robustez.
+pesos_robustos <- weights(solow_robusta, type = "robustness")
+
+# Exibe as quatro menores ponderações.
+round(head(sort(pesos_robustos), 4), 3)
+```
+
+Pesos menores indicam maior redução da contribuição da observação no ajuste
+robusto. O peso não é probabilidade nem regra de exclusão.
+
+
+
+
+# Regressão quantílica
+
+Importe a planilha e construa os retornos excedentes da Ford e do S&P 500.
+
+```{r}
+#| label: preparar-capm
+
+# Localiza e importa a planilha usada na aula.
+path_capm <- here::here("data/raw/capm.xls")
+dados_capm <- readxl::read_xls(path_capm)
+
+# Calcula os retornos logarítmicos mensais em porcentagem.
+dados_capm_retornos <- dados_capm |>
+  mutate(
+    ret_sp500 = c(NA, 100 * diff(log(SANDP))),
+    ret_ford = c(NA, 100 * diff(log(FORD)))
+  )
+
+# Converte a taxa livre de risco para a base mensal e calcula os retornos excedentes.
+dados_capm_retexc <- dados_capm_retornos |>
+  mutate(
+    ustb3m = USTB3M / 12,
+    retexc_sp500 = ret_sp500 - ustb3m,
+    retexc_ford = ret_ford - ustb3m
+  ) |>
+  drop_na()
+```
+
+Estime o CAPM por MQO para descrever a média condicional.
+
+```{r}
+#| label: capm-mqo-ford
+
+# Estima o CAPM por mínimos quadrados ordinários.
+capm_ford <- lm(
+  retexc_ford ~ retexc_sp500,
+  data = dados_capm_retexc
+)
+
+# Exibe os resultados do CAPM estimado por MQO.
+summary(capm_ford)
+```
+
+Estime a regressão da mediana condicional.
+
+```{r}
+#| label: rq-mediana-ford
+
+# Estima a mediana condicional do retorno excedente da Ford.
+rq_ford_mediana <- quantreg::rq(
+  retexc_ford ~ retexc_sp500,
+  data = dados_capm_retexc
+)
+
+# Exibe os resultados da regressão da mediana.
+summary(rq_ford_mediana)
+```
+
+Quando `tau` não é informado, `rq()` utiliza `tau = 0.50`.
+
+Estime o CAPM nos nove decis.
+
+```{r}
+#| label: rq-decis-ford
+
+# Estima os quantis condicionais de 0,10 a 0,90.
+rq_ford_decis <- quantreg::rq(
+  retexc_ford ~ retexc_sp500,
+  data = dados_capm_retexc,
+  tau = seq(0.1, 0.9, 0.1)
+)
+
+# Exibe os resultados das regressões estimadas nos nove decis.
+summary(rq_ford_decis)
+```
+
+Cada regressão utiliza toda a amostra. Os valores de `tau` representam
+quantis condicionais, não subamostras.
+
+Organize os coeficientes estimados nos decis.
+
+```{r}
+#| label: coeficientes-decis-ford
+
+# Reúne os coeficientes dos nove quantis estimados.
+tabela_decis <- tibble(
+  tau = seq(0.1, 0.9, 0.1),
+  Intercepto = unname(coef(rq_ford_decis)[1, ]),
+  Mercado = unname(coef(rq_ford_decis)[2, ])
+)
+
+tabela_decis |>
+  mutate(across(c(Intercepto, Mercado), ~ round(.x, 3)))
+```
+
+Construa as retas de MQO e dos quantis selecionados.
+
+```{r}
+#| label: retas-capm
+
+# Estima os três quantis usados na comparação gráfica.
+taus_selecionados <- c(0.10, 0.50, 0.90)
+rq_ford <- quantreg::rq(
+  retexc_ford ~ retexc_sp500,
+  tau = taus_selecionados,
+  data = dados_capm_retexc
+)
+
+# Organiza os coeficientes das quatro retas.
+retas_capm <- bind_rows(
+  tibble(
+    Relação = "MQO",
+    Intercepto = unname(coef(capm_ford)[1]),
+    Inclinação = unname(coef(capm_ford)[2])
+  ),
+  tibble(
+    Relação = c("tau = 0,10", "tau = 0,50", "tau = 0,90"),
+    Intercepto = unname(coef(rq_ford)[1, ]),
+    Inclinação = unname(coef(rq_ford)[2, ])
+  )
+)
+
+# Exibe os coeficientes das quatro retas comparadas.
+retas_capm
+```
+
+Compare graficamente as quatro relações estimadas.
+
+```{r}
+#| label: grafico-retas-capm
+#| fig-width: 9
+#| fig-height: 5.3
+
+# Representa os dados e as retas estimadas na mesma figura.
+ggplot(
+  dados_capm_retexc,
+  aes(x = retexc_sp500, y = retexc_ford)
+) +
+  geom_point(color = "grey55", alpha = 0.7, size = 1.8) +
+  geom_abline(
+    data = retas_capm,
+    aes(
+      intercept = Intercepto,
+      slope = Inclinação,
+      color = Relação,
+      linetype = Relação
+    ),
+    linewidth = 1
+  ) +
+  scale_color_manual(
+    values = c(
+      "MQO" = "#314f4f",
+      "tau = 0,10" = "#e64173",
+      "tau = 0,50" = "#6a5acd",
+      "tau = 0,90" = "#4b8bbe"
+    )
+  ) +
+  scale_linetype_manual(
+    values = c(
+      "MQO" = "solid",
+      "tau = 0,10" = "dashed",
+      "tau = 0,50" = "dotdash",
+      "tau = 0,90" = "longdash"
+    )
+  ) +
+  labs(
+    x = "Retorno excedente do S&P 500 (%)",
+    y = "Retorno excedente da Ford (%)",
+    color = NULL,
+    linetype = NULL
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+Examine como os coeficientes variam ao longo dos quantis.
+
+```{r}
+#| label: grafico-coeficientes-quantis
+#| fig-width: 9
+#| fig-height: 6
+
+# Calcula os intervalos de 95% e compara os coeficientes quantílicos com o MQO.
+plot(
+  summary(rq_ford_decis, alpha = 0.05),
+  level = 0.95
+)
+```
+
+**Observe:** o MQO descreve a média condicional, enquanto cada valor de `tau`
+descreve um quantil condicional da mesma amostra.

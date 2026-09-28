@@ -1,0 +1,24 @@
+---
+title: "Atividade 8"
+author: "Paulo Aragão Daldegan"
+
+format:
+  html:
+    toc: true
+    embed-resources: true
+
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# Resolução das questões
+
+**1** - Para identificarmos se alguns meses específicos alteram substantivamente o beta estimado ou os valores ajustados da regressão, devemos proceder com um diagnóstico de influência. Para avaliar a influência de uma observação, podemos adotar a estratégia $Delet-one$, excluindo a observação, reestimando o modelo e comparando os resultados. Há duas formas de medidas de influência: por DFBETAS (a principal para responder a pergunta), onde irá medir a mudança dos coeficientes estimados; e DFFITS, que mostra a consequência conjunta das mudanças nos coeficientes para o ajuste da regressão. Apesar dos resultados apontarem influência de certa observação, ela pode ser incomum em uma dimensão e não em outra, assim os diagnósticos devem ser interpretados conjuntamente.
+
+**2** - Para verificarmos se a relação estimada por MQO é excessivamente sensível a determinadas observações, devemos utilizar regressão robusta. Esta regressão busca reduzir a sensibilidade do ajuste a observações incomuns, por meio de dar menor peso às observações com resíduos muito grandes, permitindo avaliar se a relação estimada permanece semelhante quando a estimação reduz a influência de observações com resíduos extremos. Apesar de permitir tal conclusão, não permite que o modelo seja automaticamente robusto a outros problemas econométricos (Heterocedasticidade, endogeneidade, especificação, etc.).
+
+**3** - Para observarmos se a associação entre o retorno da ação e o retorno do mercado é a mesma nos diferentes quantis condicionais do retorno da ação, devemos utilizar a regressão quantílica. Ela permite estimar a relação $Y|X$ em diferentes quantis, permitindo verificar se a associação entre o retorno da ação e o retorno do mercado é homogênea ao longo da distribuição condicional do retorno da ação. Apesar disso, a regressão quantílica não substitui inferência adequada, diagnóstico de influência e nem identificação causal.
+
+É importante salientar que não devemos interpretar uma ferramenta como substituta da outra. Uma observação pode ser influente sem revelar heterogeneidade entre quantis; uma relação pode variar entre quantis sem que existam observações individualmente influentes; e uma estimação pode ser robusta aos outliers sem que o beta seja constante ao longo da distribuição condicional.
