@@ -1,0 +1,175 @@
+---
+lang: "pt-BR"
+title: "Atividade Prática 9 — Respostas"
+subtitle: "Econometria Aplicada à Finanças <br> Mestrado Profissional em Administração"
+author: "Paulo Aragão Daldegan"
+title-block-banner: "#27445C"
+date: today
+date-format: long
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-location: left
+    toc-title: "Navegação"
+    code-copy: true
+    fig-dpi: 300
+execute:
+  echo: true
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+#| echo: true
+
+# Define a exibição dos números
+options(digits = 5, scipen = 999)
+
+# carrega os pacotes usados
+library(tidyverse)
+library(Ecdat)
+library(marginaleffects)
+
+# carrega os dados do pacote Ecdat
+data("Hmda", package = "Ecdat")
+
+# Cria a variável numérica de negativa e
+# remove observações com valores ausentes
+hmda <- Hmda |>
+          mutate(deny_num = as.integer(ifelse(deny == "yes", 1, 0))) |>
+          drop_na()
+
+# visão geral dos dados preparados
+glimpse(hmda)
+```
+
+
+
+## A.
+
+```{r}
+#| label: qA-modelo-probit
+
+# Estime o modelo Probit e armazene-o em modelo_probit.
+ 
+modelo_probit <- glm(
+  deny_num ~ lvr + pbcr + single, 
+  family = binomial(link = "probit"),
+  data = hmda
+  )
+
+# Exiba os resultados da estimação com summary().
+
+summary(modelo_probit)
+
+```
+
+```{r}
+#| label: qA-modelo-logit
+
+# Estime o modelo Logit e armazene-o em modelo_logit.
+
+# estima um modelo logit
+modelo_logit <- glm(
+  deny_num ~ lvr + pbcr + single, 
+  family = binomial(link = "logit"),
+  data = hmda
+  )
+
+# Exiba os resultados da estimação com summary().
+
+summary(modelo_logit)
+
+```
+
+
+
+
+## B.
+
+```{r}
+#| label: qB-apes-probit
+
+# Calcule e apresente os APEs do modelo Probit e seus intervalos de 95%.
+
+avg_slopes(modelo_probit, by = TRUE, vcov = "HC3") 
+
+```
+
+```{r}
+#| label: qB-apes-logit
+
+# Calcule e apresente os APEs do modelo Logit e seus intervalos de 95%.
+
+avg_slopes(modelo_logit, by = TRUE, vcov = "HC3")
+
+```
+
+
+
+1. Os dois modelos produzem conclusões substantivamente semelhantes quanto
+   ao sinal e à magnitude dos efeitos?
+
+::: {.callout-note}
+## Resposta
+
+Sim, os dois modelos (Probit e Logit) permitem conclusões semelhantes. Os coeficientes betas e os erros padrão, bem como os seus intervalos de confiança, produzem resultados muitos próximos.
+
+:::
+
+
+
+2. Utilizando o modelo Probit, interprete:
+
+   - o APE de `lvr`. Como `lvr` é uma razão, utilize o APE para aproximar a
+     mudança na probabilidade prevista de negativa da hipoteca associada a um
+     aumento de **0,10** em `lvr` — por exemplo, de 0,70 para 0,80;
+   - o APE associado a `pbcr`, comparando um requerente com registro público
+     de crédito ruim a um requerente sem esse registro;
+   - o APE associado a `single`, comparando um requerente solteiro a um
+     requerente que não é solteiro.
+
+
+::: {.callout-note}
+## Resposta
+
+Para a variável de razão entre o valor do empréstimo e o valor avaliado da propriedade ('lvr'), um aumento de 0,10 está associado a um aumento de aproximadamente 2,6 pontos percentuais na probabilidade de negativa da hipoteca. Se o requerente possui registro público de crédito ruim ('pbcr'), a probabilidade de negativa da hipoteca aumenta em, aproximadamente, 30 pontos percentuais comparado ao requerente sem este registro. No caso do requerente ser solteiro ('single'), a probabilidade de negativa de hipoteca é de, aproximadamente, 4,7 pontos percentuais. Lembrando que os resultados de cada variável consideram as demais constantes.
+
+:::
+
+
+
+
+## C.
+
+```{r}
+#| label: qC-pseudo-r2-probit
+
+# Calcule e exiba o pseudo-R² de McFadden para modelo_probit.
+
+pseudoR2_probit <- 1 -(modelo_probit$deviance) / (modelo_probit$null.deviance)
+
+pseudoR2_probit
+
+```
+
+```{r}
+#| label: qC-pseudo-r2-logit
+
+# Calcule e exiba o pseudo-R² de McFadden para modelo_logit.
+
+pseudoR2_logit <- 1 - (modelo_logit$deviance) / (modelo_logit$null.deviance)
+
+pseudoR2_logit
+
+```
+
+
+::: {.callout-note}
+## Resposta
+
+Os modelos Probit e Logit apresentam ajuste muito semelhante em relação ao modelo nulo, ou seja, a escolha entre as duas especificações não altera de forma relevante o desempenho do modelo segundo o pseudo-$R^2$ de McFadden.
+
+:::

@@ -1,0 +1,315 @@
+---
+title: "Econometria Aplicada à Finanças <br> Aula 9"
+subtitle: "Modelos para variáveis dependentes binárias"
+lang: pt-BR
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+# Configura a exibição de números.
+options(digits = 5, scipen = 999)
+
+# Carrega os pacotes necessários aos exemplos da aula.
+library(tidyverse)
+library(Ecdat)
+library(sandwich)
+library(marginaleffects)
+library(ROCR)
+```
+
+# Introdução
+
+Este roteiro acompanha a execução dos códigos da Aula 9. Execute os blocos na
+ordem apresentada.
+
+# Dados HMDA e modelo de probabilidade linear
+
+Carregue e examine os dados de pedidos de hipoteca.
+
+```{r}
+#| label: explorar-hmda
+
+# Carrega os dados e examina sua estrutura e suas variáveis.
+data("Hmda", package = "Ecdat")
+dplyr::glimpse(Hmda)
+summary(Hmda)
+```
+
+Visualize a relação entre negativa da hipoteca e razão prestação/renda.
+
+```{r}
+#| label: spineplot-hmda
+
+# Representa a distribuição das negativas ao longo de dir.
+spineplot(deny ~ dir, data = Hmda)
+```
+
+Crie o indicador de negativa e mantenha as observações completas.
+
+```{r}
+#| label: preparar-hmda
+
+# Cria a resposta binária e remove valores ausentes como nos slides.
+hmda <- Hmda %>%
+  mutate(deny_num = as.integer(ifelse(deny == "yes", 1, 0))) %>%
+  drop_na()
+
+# Confere a estrutura da amostra preparada.
+glimpse(hmda)
+```
+
+Estime o modelo de probabilidade linear e obtenha seus erros-padrão robustos.
+
+```{r}
+#| label: modelo-probabilidade-linear
+
+# Estima a regressão linear simples para a negativa da hipoteca.
+mlp <- lm(deny_num ~ dir, data = hmda)
+
+# Exibe a inferência com erros-padrão robustos à heterocedasticidade.
+broom::tidy(lmtest::coeftest(mlp, vcov = vcovHC))
+```
+
+Compare a reta ajustada com os valores possíveis da resposta binária.
+
+```{r}
+#| label: grafico-modelo-probabilidade-linear
+
+# Exibe as negativas observadas em função da razão prestação/renda.
+plot(
+  x = hmda$dir,
+  y = hmda$deny_num,
+  main = "Modelo Linear de Probabilidade Estimado",
+  xlab = "Razão Prestações/Renda",
+  ylab = "Solicitação de Hipoteca?",
+  pch = 20,
+  ylim = c(-0.4, 1.4),
+  cex.main = 0.8
+)
+
+# Marca os limites de uma probabilidade e identifica os resultados.
+abline(h = 1, lty = 2, col = "darkred")
+abline(h = 0, lty = 2, col = "darkred")
+text(2.5, 0.9, cex = 0.8, "Hipoteca negada")
+text(2.5, -0.1, cex = 0.8, "Hipoteca aprovada")
+
+# Sobrepõe a reta estimada pelo modelo linear de probabilidade.
+abline(mlp, lwd = 2.2, col = "steelblue")
+```
+
+# Distribuições usadas nos modelos binários
+
+Represente a distribuição normal acumulada usada pelo Probit.
+
+```{r}
+#| label: distribuicao-normal-acumulada
+
+# Calcula a probabilidade acumulada para uma grade de valores.
+x <- seq(-4, 4, length.out = 1000)
+y <- pnorm(x, mean = 0, sd = 1)
+
+# Desenha a função acumulada e suas linhas de referência.
+plot(
+  x, y,
+  type = "l",
+  lwd = 2,
+  col = "blue",
+  main = "Função de Distribuição Acumulada: Normal Padrão",
+  xlab = "z",
+  ylab = "P(Z ≤ z)",
+  ylim = c(0, 1)
+)
+grid(lty = "dotted", col = "gray")
+abline(h = c(0, 1), lty = 2, col = "gray")
+abline(v = 0, lty = 2, col = "gray")
+```
+
+Represente a distribuição logística acumulada usada pelo Logit.
+
+```{r}
+#| label: distribuicao-logistica-acumulada
+
+# Calcula a probabilidade acumulada logística.
+x_plogis <- seq(-4, 4, length.out = 1201)
+y_logis <- plogis(x_plogis)
+logistica <- as.data.frame(cbind(x_plogis, y_logis))
+
+# Desenha a função acumulada logística com suas referências.
+p2 <- ggplot(mapping = aes(x_plogis, y_logis), data = logistica) +
+  geom_line(size = 1.3) +
+  geom_hline(yintercept = 1, color = "blue", size = 1.3, linetype = 2) +
+  geom_hline(yintercept = 0, color = "blue", size = 1.3, linetype = 2) +
+  scale_x_continuous(n.breaks = 7) +
+  labs(title = NULL, x = bquote(X), y = bquote(Lambda(x))) +
+  theme_classic(base_size = 14, base_family = "Courier") +
+  theme(plot.title = element_text(size = 24, face = "bold", hjust = 0.5)) +
+  theme(plot.subtitle = element_text(face = "italic", hjust = 0.5))
+p2
+```
+
+Compare as funções acumuladas normal e logística no mesmo gráfico.
+
+```{r}
+#| label: comparar-distribuicoes-acumuladas
+
+# Reúne as probabilidades das duas distribuições para a mesma grade.
+x <- seq(-4, 4, length.out = 1000)
+fdas <- data.frame(
+  x = rep(x, 2),
+  distribuicao = rep(c("Normal padrão", "Logística padrão"), each = length(x)),
+  probabilidade = c(pnorm(x), plogis(x))
+)
+
+# Compara graficamente as duas funções acumuladas.
+ggplot(fdas, aes(x = x, y = probabilidade, color = distribuicao)) +
+  geom_line(linewidth = 1) +
+  geom_hline(yintercept = c(0, 1), linetype = 2) +
+  labs(x = "x", y = "F(x)", color = "Distribuição") +
+  theme_classic(base_size = 14)
+```
+
+# Estimação e efeitos parciais médios
+
+Estime o Probit com as mesmas variáveis apresentadas nos slides.
+
+```{r}
+#| label: estimar-probit
+
+# Estima a probabilidade de negativa em função de dir, black e self.
+modelo_probit <- glm(
+  deny_num ~ dir + black + self,
+  family = binomial(link = "probit"),
+  data = hmda
+)
+
+# Examina os resultados da estimação.
+summary(modelo_probit)
+```
+
+Calcule os efeitos parciais médios do modelo Probit.
+
+```{r}
+#| label: efeitos-parciais-medios-probit
+
+# Obtém os APEs e sua inferência usual para a amostra completa.
+avg_slopes(modelo_probit, by = TRUE)
+```
+
+Compare com a inferência HC3 apresentada na aula.
+
+```{r}
+#| label: efeitos-parciais-medios-probit-hc3
+
+# Obtém os mesmos APEs com erros-padrão robustos HC3.
+avg_slopes(modelo_probit, by = TRUE, vcov = "HC3")
+```
+
+# Qualidade do ajuste
+
+Calcule o pseudo-$R^2$ de McFadden para o Probit e o Logit.
+
+```{r}
+#| label: pseudo-r2-probit-logit
+
+# Calcula a medida com as deviances do Probit já estimado.
+pseudoR2_probit <- 1 -
+  (modelo_probit$deviance) / (modelo_probit$null.deviance)
+pseudoR2_probit
+
+# Estima o Logit com a mesma especificação e amostra.
+modelo_logit <- glm(
+  deny_num ~ dir + black + self,
+  family = binomial(link = "logit"),
+  data = hmda
+)
+
+# Calcula a medida correspondente para o Logit.
+pseudoR2_logit <- 1 -
+  (modelo_logit$deviance) / (modelo_logit$null.deviance)
+pseudoR2_logit
+```
+
+Classifique os pedidos usando o limiar de 0,5 e examine as matrizes de confusão.
+
+```{r}
+#| label: classificacao-probit-logit
+
+# Calcula as probabilidades previstas pelos dois modelos.
+prob_probit <- predict(modelo_probit, type = "response")
+prob_logit <- predict(modelo_logit, type = "response")
+
+# Classifica as observações com o mesmo limiar usado nos slides.
+previsoes_probit <- ifelse(prob_probit > 0.5, 1, 0)
+previsoes_logit <- ifelse(prob_logit > 0.5, 1, 0)
+
+# Constrói as matrizes de confusão com as respostas observadas.
+tab_probit <- table(Observado = hmda$deny_num, Previsto = previsoes_probit)
+tab_logit <- table(Observado = hmda$deny_num, Previsto = previsoes_logit)
+
+# Calcula a porcentagem de observações corretamente classificadas.
+acuracia_probit <- sum(diag(tab_probit)) / sum(tab_probit) * 100
+acuracia_logit <- sum(diag(tab_logit)) / sum(tab_logit) * 100
+
+# Exibe as matrizes e as respectivas acurácias.
+cat("Matriz de Confusão - Modelo Probit:\n")
+print(tab_probit)
+cat("\nAcurácia do modelo Probit:", round(acuracia_probit, 2), "%\n\n")
+
+cat("Matriz de Confusão - Modelo Logit:\n")
+print(tab_logit)
+cat("\nAcurácia do modelo Logit:", round(acuracia_logit, 2), "%\n")
+```
+
+A acurácia calculada na amostra de estimação não mede o desempenho em novos dados.
+
+Compare as curvas ROC e a AUC dos dois modelos.
+
+```{r}
+#| label: curvas-roc-auc
+
+# Usa as probabilidades previstas para construir os objetos ROCR.
+y_obs <- hmda$deny_num
+pred_probit <- prediction(prob_probit, y_obs)
+pred_logit <- prediction(prob_logit, y_obs)
+
+# Calcula as curvas ROC e as áreas sob essas curvas.
+perf_probit <- performance(pred_probit, "tpr", "fpr")
+perf_logit <- performance(pred_logit, "tpr", "fpr")
+auc_probit <- performance(pred_probit, "auc")@y.values[[1]]
+auc_logit <- performance(pred_logit, "auc")@y.values[[1]]
+
+# Desenha as duas curvas ROC e a referência diagonal.
+plot(
+  perf_probit,
+  lwd = 2,
+  main = "Curvas ROC — Probit vs Logit",
+  xlab = "Taxa de Falsos Positivos (1 − Especificidade)",
+  ylab = "Taxa de Verdadeiros Positivos (Sensibilidade)"
+)
+plot(perf_logit, add = TRUE, col = "red", lwd = 2, lty = 2)
+abline(0, 1, lty = 3)
+
+# Identifica os modelos e suas respectivas AUCs na legenda.
+legend(
+  "bottomright",
+  legend = c(
+    paste0("Probit (AUC = ", round(auc_probit, 3), ")"),
+    paste0("Logit  (AUC = ", round(auc_logit, 3), ")")
+  ),
+  col = c("black", "red"),
+  lwd = 2,
+  lty = c(1, 2),
+  bty = "n"
+)
+```
