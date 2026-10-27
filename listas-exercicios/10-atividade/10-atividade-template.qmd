@@ -1,0 +1,324 @@
+---
+lang: "pt-BR"
+title: "Atividade Prática 10"
+subtitle: "Econometria Aplicada a Finanças <br> Mestrado Profissional em Administração"
+author: "Paulo Aragão Daldegan"
+title-block-banner: "#27445C"
+date: today
+date-format: long
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-location: left
+    toc-title: "Navegação"
+    code-copy: true
+    fig-dpi: 300
+execute:
+  echo: true
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+
+# carrega os pacotes necessários
+library(here)
+library(tidyverse)
+library(MASS)
+library(nnet)
+
+# define os caminhos relativos dos arquivos de dados
+caminho_risco <- here("data/raw/dados-risco-credito.csv")
+caminho_escolha <- here("data/raw/dados-escolha-investimento.csv")
+
+# importa os arquivos CSV de dados
+dados_risco <- read_csv(caminho_risco)
+dados_escolha <- read_csv(caminho_escolha)
+```
+
+## Questão 1
+
+### A. Estimação
+
+Inicialmente, criamos ou convertemos a variável `risco` para um fator ordenado da linguagem R, essa estrutura de dados incorpora a ordem das categorias de risco de crédito.
+
+```{r}
+#| label: q1-preparacao
+
+# converte a variável risco para fator ordenado
+credito <- dados_risco |>
+  mutate(
+    risco = factor(
+      risco,
+      levels = c("Baixo", "Medio", "Alto"),
+      ordered = TRUE
+    )
+  )
+```
+
+Verificamos a ordem das categorias e suas frequências na amostra.
+
+```{r}
+#| label: q1-frequencias
+
+# verifica a ordem das categorias de risco
+levels(credito$risco)
+
+# conta as empresas em cada categoria de risco
+table(credito$risco)
+```
+
+Em seguida, estimamos o modelo Probit Ordenado.
+
+```{r}
+#| label: q1-estimacao
+
+# estima o Probit Ordenado 
+modelo_ord <- MASS::polr(
+  risco ~ roa + alav + log(tam),
+  data = credito,
+  method = "probit",
+  Hess = TRUE
+)
+
+# exibe o resultado da estimação
+summary(modelo_ord)
+```
+
+Interpretando os sinais dos coeficientes, um aumento na rentabilidade sobre o ativo(`roa`) tende a deslocar para categorias de menor risco de crédito, enquanto um aumento na alavancagem (`alav`) tende a deslocar para categorias de maior risco de crédito. Os resultados não podem ser interpretados como alterações nas probabilidades de risco de crédito.
+
+### B. Efeitos parciais médios
+
+Calculamos os efeitos parciais médios (EPMs) da alavancagem financeira sobre as probabilidades das três categorias de risco de crédito, com intervalos de confiança de 95%.
+
+```{r}
+#| label: q1-epm-calculo
+
+# calcula os EPMs da alavancagem financeira
+epm_alav <- marginaleffects::avg_slopes(
+  modelo_ord,
+  variables = "alav",
+  type = "probs",
+  conf_level = 0.95
+)
+
+# exibe os EPMs estimados e seus intervalos de confiança
+epm_alav
+```
+
+Considerando um aumento de 1 ponto percentual na alavancagem financeira (0,01), os efeitos parciais médios (EPM) indicam as seguintes mudanças aproximadas nas probabilidades, em média: - Baixo: redução de 1,856 ponto percentual na probabilidade de pertencer à categoria de risco de crédito baixo. - Médio: aumento de 0,747 ponto percentual na probabilidade de pertencer à categoria de risco de crédito médio. - Alto: aumento de 1,109 ponto percentual na probabilidade de pertencer à categoria de risco de crédito alto.
+
+### C. Qualidade do ajuste
+
+Inicialmente, obtemos as categorias de risco previstas pelo modelo e construímos a matriz de confusão, comparando as classificações observadas e previstas.
+
+```{r}
+#| label: q1-matriz-confusao
+
+# obtém as categorias de risco previstas pelo modelo
+previsao_ord <- predict(modelo_ord, type = "class")
+
+# conta as empresas por categoria observada e prevista
+matriz_ord <- table(
+  Observado = credito$risco,
+  Previsto = previsao_ord
+)
+
+# exibe a matriz de confusão
+matriz_ord
+```
+
+Calculamos a **acurácia dentro da amostra**, correspondente à proporção de empresas corretamente classificadas pelo modelo.
+
+```{r}
+#| label: q1-acuracia
+
+# calcula a proporção de empresas corretamente classificadas
+acuracia_ord <- mean(
+  as.character(previsao_ord) == as.character(credito$risco)
+)
+
+# exibe a acurácia
+acuracia_ord
+```
+
+::: callout-tip
+# Por que usar `as.character()`?
+
+A variável `credito$risco` é um fator ordenado, enquanto `predict(modelo_ord, type = "class")` retorna um fator não ordenado. Como o R não permite comparar diretamente esses dois tipos de fatores com `==`, utilizamos `as.character()` para comparar os nomes das categorias observadas e previstas. A função `mean()` calcula a proporção de classificações corretas.
+:::
+
+Para avaliar esse resultado, calculamos a acurácia de referência obtida pela regra que sempre prevê a categoria de risco mais frequente na amostra.
+
+```{r}
+#| label: q1-acuracia-referencia
+
+# calcula proporção de observações na categoria majoritária
+acuracia_base_ord <- max(prop.table(table(credito$risco)))
+
+# exibe o resultado
+acuracia_base_ord
+```
+
+Por fim, calculamos o **pseudo-R² de McFadden**, comparando a log-verossimilhança do modelo estimado com a de um modelo nulo, sem variáveis explicativas.
+
+```{r}
+#| label: q1-pseudo-r2
+
+# estima o Probit Ordenado sem variáveis explicativas
+modelo_nulo_ord <- MASS::polr(
+  risco ~ 1,
+  data = credito,
+  method = "probit",
+  Hess = TRUE
+)
+
+# calcula o pseudo-R^2 de McFadden
+pseudo_r2_ord <- 1 - as.numeric(logLik(modelo_ord)) /
+  as.numeric(logLik(modelo_nulo_ord))
+
+# exibe o resultado
+pseudo_r2_ord
+```
+
+A partir dos resultados, podemos observar que a acurácia do modelo (0.61625) é superior a acurácia de referência obtida pela regra que sempre prevê a categoria de risco mais frequente na amostra (0.5). Analisando a matriz de confusão, o modelo apresenta melhor desempenho na identificação de empresas da categoria baixo, possuindo dificuldades para classificar corretamente as categorias médio e alto, frequentemente confundidas com outras categorias. O pseudo-$R^2$ de McFadden de 0,20196 indica que o modelo apresenta uma melhora no ajuste em relação ao modelo nulo.
+
+## Questão 2
+
+### A. Estimação
+
+Inicialmente, convertemos a variável `choice` para um fator nominal (um fator não ordenado) da linguagem R, estabelecendo `Ações` como categoria de referência.
+
+```{r}
+#| label: q2-preparacao
+
+# converte choice em fator e define Acoes como referência
+investimentos <- dados_escolha |>
+  mutate(
+    choice = forcats::fct_relevel(
+      factor(choice),
+      "Acoes"
+    )
+  )
+```
+
+Verificamos os níveis do fator e as frequências das modalidades de investimento.
+
+```{r}
+#| label: q2-frequencias
+
+# verifica os níveis e a categoria de referência
+levels(investimentos$choice)
+
+# conta os investidores por modalidade de investimento
+table(investimentos$choice)
+```
+
+Em seguida, estimamos o modelo Logit Multinomial.
+
+```{r}
+#| label: q2-estimacao
+
+# estima o Logit Multinomial com Ações como referência
+modelo_mnl <- nnet::multinom(
+  choice ~ idade + riqueza_100mil + aversao_risco,
+  data = investimentos,
+  trace = FALSE
+)
+
+# exibe o resultado da estimação
+summary(modelo_mnl)
+```
+
+A partir dos resultados do modelo, um aumento na aversão ao risco está associado a uma maior preferência (utilidade) por poupança comparado a ações. Mantidas as demais variáveis constantes, para um grau de aversão ao risco maior, os indivíduos possuem maior utilidade sistemática para poupança em comparação a ações.
+
+### B. Efeitos parciais médios
+
+Calculamos os efeitos parciais médios (EPMs) da riqueza dos investidores sobre as probabilidades de escolher Ações, Fundos e Poupança, com intervalos de confiança de 95%.
+
+```{r}
+#| label: q2-epm-calculo
+
+# calcula os EPMs da riqueza dos investidores
+epm_riqueza <- marginaleffects::avg_slopes(
+  modelo_mnl,
+  variables = "riqueza_100mil",
+  type = "probs",
+  conf_level = 0.95
+)
+
+# exibe os EPMs estimados e seus intervalos de confiança.
+epm_riqueza
+```
+
+Um aumento de 100 mil unidades monetárias na riqueza estaria associado, como aproximação, a um aumento médio de 11,54 pontos percentuais na probabilidade de escolher Ações como modalidade principal de investimento. Além disso, esta associado a um aumento médio de 9,91 pontos percentuais na probabilidade de escolher Fundos e uma diminuição média de 21,46 pontos percentuais de escolher poupança.
+
+### C. Qualidade do ajuste
+
+Inicialmente, obtemos as modalidades de investimento previstas pelo modelo e construímos a matriz de confusão, comparando as escolhas observadas e previstas.
+
+```{r}
+#| label: q2-matriz-confusao
+
+# obtém as modalidades previstas pelo modelo
+previsao_mnl <- predict(modelo_mnl, type = "class")
+
+# conta os investidores por modalidade observada e prevista.
+matriz_mnl <- table(
+  Observado = investimentos$choice,
+  Previsto = previsao_mnl
+)
+
+# exibe a matriz de confusão
+matriz_mnl
+```
+
+Calculamos a **acurácia dentro da amostra**, correspondente à proporção de investidores cuja modalidade principal foi corretamente prevista pelo modelo.
+
+```{r}
+#| label: q2-acuracia
+
+# calcula a proporção de investidores corretamente classificados
+acuracia_mnl <- mean(
+  as.character(previsao_mnl) == as.character(investimentos$choice)
+)
+
+# exibe a acurácia
+acuracia_mnl
+```
+
+Para avaliar esse resultado, calculamos a acurácia de referência obtida pela regra que sempre prevê a modalidade de investimento mais frequente na amostra.
+
+```{r}
+#| label: q2-acuracia-referencia
+
+# proporção de observações na modalidade majoritária
+acuracia_base_mnl <- max(prop.table(table(investimentos$choice)))
+
+# exibe o resultado
+acuracia_base_mnl
+```
+
+Por fim, calculamos o pseudo-$R^2$ de McFadden, comparando a log-verossimilhança do modelo estimado com a de um modelo nulo, sem variáveis explicativas.
+
+```{r}
+#| label: q2-pseudo-r2
+
+# estima o Logit Multinomial sem variáveis explicativas
+modelo_nulo_mnl <- nnet::multinom(
+  choice ~ 1,
+  data = investimentos,
+  trace = FALSE
+)
+
+# calcula o pseudo-R^2 de McFadden
+pseudo_r2_mnl <- 1 - as.numeric(logLik(modelo_mnl)) /
+  as.numeric(logLik(modelo_nulo_mnl))
+
+# exibe o resultado
+pseudo_r2_mnl
+```
+
+O modelo apresenta uma acurácia superior (0.63875) à regra da categoria majoritária (0.3625). Analisando a matriz de confusão, o modelo apresenta melhor desempenho na identificação de escolha da poupança e ações, possuindo um pouco de dificuldade para classificar corretamente as categoria de fundos, frequentemente confundida com outras categorias. O pseudo-$R^2$ de McFadden de 0,3547 indica que o modelo apresenta uma melhora no ajuste em relação ao modelo nulo.
