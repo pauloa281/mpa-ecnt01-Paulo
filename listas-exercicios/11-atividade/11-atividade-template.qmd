@@ -1,0 +1,346 @@
+---
+lang: "pt-BR"
+title: "Atividade Prática 11"
+subtitle: "Econometria Aplicada a Finanças <br> Mestrado Profissional em Administração"
+author: "Paulo Aragão Daldegan"
+title-block-banner: "#27445C"
+date: today
+date-format: long
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-location: left
+    toc-title: "Navegação"
+    code-copy: true
+    fig-dpi: 300
+execute:
+  echo: true
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+#| echo: false
+
+# Carrega os pacotes usados
+library(here)
+library(tidyverse)
+library(haven)
+library(fixest)
+
+
+# Define o caminho relativo dos dados, ajuste se necessário
+caminho_dta <- here("data/raw/casaburi-willis-2018-principal.dta")
+
+# Importa os dados do experimento no formato Stata usando 
+# a função read_dta do pacote haven 
+dados_seguro <- haven::read_dta(caminho_dta)
+```
+
+Consulte o enunciado e substitua `author` pelo seu nome. Nas Questões 3 e 6, preencha somente as
+lacunas `____` das fórmulas antes de executar os modelos. Os demais códigos estão completos.
+
+Execute os chunks na ordem, registre suas respostas e renderize o documento em HTML.
+
+
+
+
+## Questão 1 — Análise exploratória dos dados
+
+### Conhecendo as observações e variáveis
+
+No pipeline abaixo, `select()` seleciona as cinco variáveis utilizadas na atividade, e `slice_head(n = 8)` exibe as  oito primeiras observações dessas variáveis.
+
+```{r}
+#| label: primeiras-observacoes
+
+# Examina a codificação das variáveis nas oito primeiras observações.
+dados_seguro |>
+  select(treatment, A2, B, tookup, fid1) |>
+  slice_head(n = 8)
+```
+
+
+### Constrói a tabela descritiva
+
+```{r}
+#| label: resumo-por-grupo
+
+# Calcula o número de agricultores, as contratações e a taxa por grupo.
+resumo_grupos <- dados_seguro |>
+  group_by(treatment, A2, B) |> # agrupa pelas três variáveis categóricas
+  summarise(
+    agricultores = n(),         # conta os agricultores
+    contratacoes = sum(tookup), # conta as contratações
+    proporcao = mean(tookup)    # calcula a proporção de contratação,
+  )
+
+# Apresenta o resumo dos grupos experimentais.
+resumo_grupos
+```
+
+### Produz o gráfico
+
+O gráfico utiliza `resumo_grupos`. Em `aes()`, associamos a modalidade ao eixo horizontal e multiplicamos `proporcao` por 100 para expressar a taxa em porcentagem. `geom_col()` desenha as barras; `labs()` nomeia os eixos, e `theme_classic()` define o tema.
+
+```{r}
+#| label: fig-taxas-contratacao
+#| fig-cap: "Taxas de contratação do seguro por grupo experimental"
+
+# Compara as taxas de contratação dos três grupos em porcentagem.
+ggplot2::ggplot(
+  resumo_grupos,
+  ggplot2::aes(x = treatment, y = 100 * proporcao)
+) +
+  ggplot2::geom_col() +
+  ggplot2::labs(
+    x = "Grupo experimental",
+    y = "Taxa de contratação (%)"
+  ) +
+  ggplot2::theme_classic()
+```
+
+
+### Respostas
+
+**a)** A unidade de observação é o agricultor associado a parcela, a variável que representa a contratação do seguro  é `tookup` e as variáveis utilizadas para identificar as modalidades de tratamento são `treatment`, `A2` e `B`. A variável `fid1` representa um identificador para qual agrupamento administrativo aquele agricultor pertence e as variáveis dummy `A2` e `B` assumem valor zero para agricultores pertencentes a A1 por ela ser a categoria de referência.
+
+
+**b)** O número de agricultores em cada grupo de proposta é parecido, com diferenças pequenas e aproximadamente 200 em cada. A partir do gráfico, podemos observar que a taxa de contratação no grupo B, de aproximadamente 72%, é muito maior comparado aos grupos A1 e A2, de aproximadamente 5% e 6% respectivamente, observando um padrão de maior contratação na modalidade do grupo B.
+
+
+
+
+## Questão 2 — Identificação causal
+
+A atribuição aleatória distribui os agricultores entre os grupos independentemente de características individuais, tornando-os comparáveis (na maioria das vezes). Isso reduz o viés de seleção, comum em estudos observacionais, nos quais características dos indivíduos podem influenciar tanto a escolha do tratamento quanto a decisão de contratação. Assim, as diferenças nas taxas de contratação podem ser interpretadas como efeitos causais das modalidades de seguro.
+
+
+
+
+## Questão 3 — Estimação e interpretação do efeito do desconto
+
+A função `fixest::feols()` estima o modelo por mínimos quadrados ordinários. `data` informa a base utilizada, e `vcov = "iid"` solicita os erros-padrão convencionais adotados na atividade. Mantenha esses argumentos preenchidos como estão.
+
+```{r}
+#| label: modelo-sem-efeitos-fixos
+
+# Complete apenas os nomes das variáveis na fórmula do modelo sem efeitos fixos.
+# Estima por MQO as diferenças de contratação em relação ao grupo A1.
+modelo_linear <- fixest::feols(
+  tookup ~ A2 + B,
+  data = dados_seguro,
+  vcov = "iid"
+)
+```
+
+Após completar e executar a célula de código (chunk) anterior, execute o código abaixo sem alterações. 
+
+
+```{r}
+#| label: resultado-desconto
+
+# Calcula as estimativas e os intervalos de confiança do modelo.
+estimativas_lineares <- broom::tidy(
+  modelo_linear,
+  conf.int = TRUE,
+  conf.level = 0.95
+)
+
+# Exibe as estimativas e as medidas de incerteza.
+estimativas_lineares
+```
+
+Na linha `A2`, a coluna `estimate` apresenta o coeficiente estimado, e `conf.low` e `conf.high` apresentam os limites inferior e superior do intervalo de confiança de 95%. Multiplique esses três valores por 100 para expressá-los em pontos percentuais.
+
+### Respostas
+
+**a)** O coeficiente estimado de A2 é 0,0126, indicando que a oferta do seguro com pagamento antecipado e desconto de 30% apresentou uma probabilidade de contratação aproximadamente 1,26 ponto percentual maior em relação à oferta com pagamento antecipado integral
+
+
+**b)** O intervalo de confiança de 95% do coeficiente de A2 vai de, aproximadamente, -5,00 a 7,53 pontos percentuais, incluindo o valor zero no intervalo. Assim, não é possível descartar a hipótese de que o efeito do desconto sobre a contratação seja nulo ($\beta = 0$). Portanto, não há evidências estatísticas para afirmar que o desconto de 30% aumentou ou reduziu a probabilidade de contratação em relação ao grupo A1.
+
+
+
+
+## Questão 4 — Diferenças de médias e regressão linear
+
+### Calcula a diferença entre as proporções
+
+Reutilizamos `resumo_grupos`, criado na Questão 1. `filter()` seleciona uma linha e mantém a 
+estrutura de tabela, `pull(proporcao)` extrai os valores da coluna `proporcao` como um vetor 
+numérico. Como cada seleção contém uma única linha, obtemos um valor para cada modalidade. 
+`pull()` extrai a proporção já calculada, sem recalculá-la.
+
+Primeiro, mostramos separadamente a seleção e a extração para o pagamento na colheita (`B`).
+
+```{r}
+#| label: proporcao-grupo-b
+
+# Seleciona a linha com as estatísticas do grupo B.
+grupo_b <- resumo_grupos |>
+  filter(treatment == "B")
+
+# Exibe a tabela selecionada.
+grupo_b
+
+# Extrai a coluna de proporções como um vetor numérico.
+proporcao_b <- grupo_b |>
+  pull(proporcao)
+
+# Exibe a proporção de contratação do grupo B.
+proporcao_b
+```
+
+Para o pagamento antecipado integral (`A1`), reunimos as duas operações em um pipeline e calculamos a diferença na ordem solicitada
+no enunciado. A seleção pelos identificadores das modalidades torna o cálculo independente da 
+ordem das linhas na tabela.
+
+```{r}
+#| label: diferenca-de-proporcoes
+
+# Seleciona o grupo A1 e extrai sua proporção de contratação.
+proporcao_a1 <- resumo_grupos |>
+  filter(treatment == "A1") |>
+  pull(proporcao)
+
+# Subtrai a taxa de A1 da taxa de B.
+diferenca_proporcoes <- proporcao_b - proporcao_a1
+
+# Mostra o resultado com quatro casas decimais.
+round(diferenca_proporcoes, 4)
+```
+
+### Comparar os resultados pela tabela do modelo
+
+Na tabela `estimativas_lineares`, exibida na Questão 3, consulte a coluna `estimate` na linha
+identificada por `B` em `term`. Compare essa estimativa com a diferença entre proporções calculada
+acima, considerando o arredondamento dos valores exibidos.
+
+Para o item **c**, leia também a estimativa da linha `(Intercept)` e some-a ao coeficiente de `B`.
+Relacione o intercepto e essa soma às proporções observadas nas duas modalidades.
+
+
+### Respostas
+
+**a)** A diferença entre a proporção de contratação sob pagamento na colheita (B) e a proporção sob pagamento antecipado integral (A1) foi de 0,6698.
+
+
+
+**b)** O coeficiente estimado de `B` no modelo da questão 3 foi de 0,66976791 (arredondando 0,6698). Comparando esse valor com a diferença das proporções do item a, podemos observar que são valores arrendondados idênticos, demonstrando que a estimativa de `B` representa a diferença das proporções da contratação de `B` e `A1`.  
+
+
+
+**c)** O intercepto possui um valor estimado de aproximadamente 0,0459 e, somado ao valor estimado de `B`, chega-se ao valor de 0,7157. O intercepto representa a proporção de contratação sob pagamento antecipado integral (A1) e a soma representa a proporção de contratação sob pagamento na colheita (B), por isso a diferença entre eles representa o coeficiente estimado para `B`. Assim, a oferta com pagamento na colheita apresentou uma taxa de contratação aproximadamente 66,98 pontos percentuais superior à oferta com pagamento antecipado integral.
+
+
+
+
+## Questão 5 — Efeito causal e mecanismos econômicos
+
+Não podemos concluir. O experimento identifica o efeito causal da modalidade de pagamento na colheita sobre a contratação do seguro, mas não permite concluir que as restrições de liquidez sejam a única explicação, podendo ter mecanismos econômicos responsáveis por esse efeito. O resultado também pode estar relacionado às preferências intertemporais dos agricultores e aos riscos percebidos quanto ao cumprimento dos contratos.
+
+
+
+
+## Questão 6 — Efeitos fixos e desenho experimental
+
+`fixef.rm = "none"` preserva as observações dos agrupamentos com um único agricultor, e 
+`vcov = "iid"` mantém a inferência convencional utilizada na reprodução. Complete somente 
+a fórmula e mantenha essas opções.
+
+```{r}
+#| label: modelo-efeitos-fixos
+
+# Complete apenas os nomes das variáveis na fórmula com efeitos fixos.
+# Estima os efeitos dos tratamentos, controlando as diferenças entre agrupamentos.
+# Preserva a amostra e utiliza a inferência convencional da especificação original.
+modelo_efeitos_fixos <- fixest::feols(
+   tookup ~ A2 + B | fid1,
+  data = dados_seguro,
+  vcov = "iid",
+  fixef.rm = "none"
+)
+
+# Confere o número de observações utilizadas na estimação.
+nobs(modelo_efeitos_fixos)
+```
+
+
+O código abaixo usa novamente `broom::tidy()`, com os mesmos argumentos da Questão 3, para apresentar 
+os coeficientes e os intervalos de confiança de 95% do modelo com efeitos fixos.
+
+```{r}
+#| label: resultados-efeitos-fixos
+
+# Organiza os coeficientes e seus intervalos de confiança de 95%.
+estimativas_efeitos_fixos <- broom::tidy(
+  modelo_efeitos_fixos,
+  conf.int = TRUE,
+  conf.level = 0.95
+)
+
+# Exibe os resultados da especificação com efeitos fixos.
+estimativas_efeitos_fixos
+```
+
+
+### Compara os modelos com `etable()`
+
+Reunimos os dois modelos em uma lista nomeada: cada elemento contém um modelo, e seu nome 
+será o título da coluna correspondente. `fixest::etable()` apresenta seus resultados 
+lado a lado.
+
+`coefstat = "confint"` solicita os intervalos de confiança, e `ci = 0.95` define seu nível. `keep` 
+seleciona os coeficientes de `A2` e `B`; `fitstat = ~ n + ar2` inclui o número de observações e o 
+$R^2$ ajustado. Os demais argumentos ajustam as casas decimais, os rótulos e a apresentação da tabela. 
+`knitr::kable()` apresenta no HTML o `data.frame` produzido por `etable()`. Execute todo o código 
+abaixo sem alterações.
+
+```{r}
+#| label: tbl-comparacao-etable
+#| tbl-cap: "Contratação do seguro: modelos com e sem efeitos fixos"
+
+# Define os títulos das colunas e reúne os dois modelos estimados com fixest.
+modelos_fixest <- list(
+  "Sem efeitos fixos" = modelo_linear,
+  "Com efeitos fixos" = modelo_efeitos_fixos
+)
+
+# Organiza as estimativas, os intervalos e as estatísticas de ajuste.
+tabela_etable <- fixest::etable(
+  modelos_fixest,
+  coefstat = "confint",
+  ci = 0.95,
+  keep = c("A2", "B"),
+  fitstat = ~ n + ar2,
+  digits = "r4",
+  digits.stats = "r3",
+  signif.code = NA,
+  depvar = FALSE,
+  se.row = FALSE,
+  dict = c("fid1" = "Efeitos fixos", "n" = "n", "ar2" = "R² ajustado"),
+  style.df = fixest::style.df(
+    fixef.title = "",
+    stats.title = "",
+    yesNo = c("Sim", "Não")
+  )
+)
+
+# Exibe no HTML a tabela já organizada por etable.
+knitr::kable(tabela_etable)
+```
+
+Nota: Intervalos de confiança de 95% entre colchetes, calculados com erros-padrão convencionais. 
+A2: desconto de 30%; B: pagamento na colheita. Referência: A1. $n$: número de agricultores.
+Coeficientes em proporções (×100 = pontos percentuais).
+
+
+### Respostas
+
+**a)** Os efeitos fixos dos agrupamentos utilizando `fid1` controlam características específicas de cada agrupamento administrativo que podem afetar a decisão de contratação, como condições econômicas e características locais. É pertinente porque a aleatorização foi realizada considerando esses agrupamentos, funcionando como um controle adicional, tornando as comparações mais precisas. Entretanto, a identificação causal dos efeitos dos tratamentos não depende da inclusão dos efeitos fixos, pois é garantida pela atribuição aleatória das modalidades de seguro.
+
+
+**b)** A inclusão dos efeitos fixos provoca alterações nos coeficientes estimados. Para A2, o coeficiente passa de 0,0126 para 0,0038, reduzindo a diferença estimada em relação ao grupo A1. Para B, o coeficiente passa de 0,6698 para 0,6747, aumentando um pouco a diferença estimada em relação ao grupo A1. As principais conclusões econômicas não se modificam, pois não há evidências estatísticas da diferença entre A2 e A1, enquanto a modalidade B apresenta um pequeno aumento e continua estatisticamente significativo.
