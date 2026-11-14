@@ -1,0 +1,93 @@
+---
+lang: "pt-BR"
+title: "Atividade Prática 12"
+subtitle: "Econometria Aplicada a Finanças <br> Mestrado Profissional em Administração"
+author: "Paulo Aragão Daldegan"
+title-block-banner: "#27445C"
+date: today
+date-format: long
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-location: left
+    toc-title: "Navegação"
+    code-copy: true
+    fig-dpi: 300
+execute:
+  echo: true
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+#| echo: false
+
+# Carrega os pacotes usados
+library(tidyverse)
+library(fixest)
+
+# Carrega os dados do mercado de Fulton.
+data("fulton", package = "fixest")
+```
+
+### Executando os modelos
+
+Estimando por MQO e MQ2E o seguinte modelo:
+
+$$
+qty_t = \alpha + \beta price_t + \gamma t + \varepsilon_t
+$$
+
+- $qty_t$: quantidade de peixe vendida no dia (libras/dia).
+
+- $price_t$: preço, tratado como endógeno (US$/libra).
+
+- $t$: tendência temporal linear, tratada como controle exógeno, incluída para captar possíveis mudanças graduais na demanda não explicadas pelo preço.
+
+- $\varepsilon_t$: termo de erro.
+
+```{r}
+# Estima a demanda por MQO, incluindo o preço e a tendência temporal.
+modelo_mqo <- fixest::feols(
+  qty ~ price + t,
+  data = fulton,
+  vcov = "iid"
+)
+
+# Estima por MQ2E, usando vento e ondas como instrumentos do preço.
+modelo_vi <- fixest::feols(
+  qty ~ t | price ~ speed2 + wave2,
+  data = fulton,
+  vcov = "iid"
+)
+```
+
+### Primeiro estágio de MQ2E (utilizando variável instrumental)
+
+O primeiro estágio explica o preço pelos instrumentos meteorológicos, controlando pela tendência temporal:
+
+$$
+price_t = \pi_0 + \pi_1 speed2_t + \pi_2 wave2_t + \pi_3 t + v_t
+$$
+
+```{r}
+# Exibe a regressão do primeiro estágio
+summary(modelo_vi, stage = 1)
+
+# Exibe a estimativa MQO do coeficiente do preço.
+coef(modelo_mqo)["price"]
+```
+
+### Segundo estágio de MQ2E (utilizando variável instrumental)
+
+```{r}
+# Exibe a regressão do segundo estágio
+summary(modelo_vi, stage = 2)
+```
+
+
+
+
+
