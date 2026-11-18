@@ -1,0 +1,421 @@
+
+---
+lang: "pt-BR"
+title: "Resolução da Atividade Prática 13"
+subtitle: "Econometria Aplicada a Finanças <br> Mestrado Profissional em Administração"
+author: "Paulo Aragão Daldegan"
+title-block-banner: "#27445C"
+format:
+  html:
+    theme: flatly
+    embed-resources: true
+date: today
+date-format: long
+execute:
+  echo: true
+  warning: false
+  message: false
+crossref:
+  fig-prefix: 'Fig.'
+  tbl-prefix: 'Tab.'
+---
+
+```{r}
+#| label: setup
+#| echo: true
+
+# Carrega os pacotes necessários
+library(here)
+library(tidyverse)
+library(fixest)
+
+# Define o caminho do arquivo CSV na raiz do projeto
+caminho_csv <- here::here("data/raw/medicaid-did-2013-2015.csv")
+
+# Importa o CSV com readr
+dados <- readr::read_csv(caminho_csv, show_col_types = FALSE)
+
+# Cria os indicadores do modelo de diferenças-em-diferenças
+dados <- dados |>
+  mutate(
+    tratado = if_else(is.na(adopt_year), 0L, 1L),
+    depois = if_else(year == 2015, 1L, 0L)
+  )
+```
+
+## Orientações
+
+Este documento é o **template de resolução da Atividade Prática 13 — Diferenças-em-Diferenças (DiD)**.
+
+Acompanhe as explicações do enunciado da atividade e execute os códigos R apresentados neste arquivo, na sequência indicada.
+
+Após examinar os resultados, responda à Questão 1, substituindo os espaços reservados pelas suas respostas. Apresente os cálculos e as interpretações solicitados.
+
+**Não é necessário desenvolver novos códigos R para responder à questão.** Utilize os resultados obtidos e as expressões matemáticas fornecidas.
+
+## Preparação dos dados
+
+O código do chunk `setup` importou os dados da ACS e criou dois indicadores:
+
+- `tratado`: identifica os estados que expandiram o Medicaid em 2014.
+- `depois`: identifica o período posterior à expansão (2015).
+
+Vamos examinar a estrutura dos dados e a distribuição das observações.
+
+```{r}
+#| label: verificacao-dados
+
+# Examina as variáveis e seus tipos
+glimpse(dados)
+
+# Conta as observações em cada grupo e período
+dados |>
+  count(tratado, depois)
+
+# Conta as unidades estaduais em cada grupo
+dados |>
+  distinct(state, tratado) |>
+  count(tratado, name = "unidades_estaduais")
+```
+
+## Estimando diferenças-em-diferenças
+
+### As quatro médias
+
+O estimador DiD utiliza as proporções de pessoas sem seguro-saúde nos grupos de tratamento e controle, antes e depois da expansão do Medicaid.
+
+| Grupo | Antes (2013) | Depois (2015) |
+|:---|:---:|:---:|
+| Controle | $\bar Y_{C,0}$ | $\bar Y_{C,1}$ |
+| Tratamento | $\bar Y_{T,0}$ | $\bar Y_{T,1}$ |
+
+Calcularemos essas proporções utilizando os pesos amostrais `perwt`, conforme explicado no enunciado da atividade.
+
+```{r}
+#| label: medias-did
+
+# Calcula as quatro médias ponderadas
+medias <- dados |>
+  group_by(tratado, depois) |>
+  summarise(
+    observacoes = n(),
+    proporcao = weighted.mean(uninsured, w = perwt),
+    .groups = "drop"
+  )
+
+# Apresenta as médias em uma tabela
+medias |>
+  mutate(
+    grupo = if_else(tratado == 1, "Tratamento", "Controle"),
+    ano = if_else(depois == 1, 2015L, 2013L)
+  ) |>
+  select(grupo, ano, observacoes, proporcao) |>
+  mutate(proporcao = round(100 * proporcao, 3)) |>
+  knitr::kable(
+    col.names = c(
+      "Grupo", "Ano", "Observações", "Sem seguro (%)"
+    ),
+    caption = "Proporção ponderada de pessoas sem seguro-saúde."
+  )
+```
+
+As proporções são apresentadas em porcentagens, mas o objeto `medias` conserva os valores originais, sem arredondamento, para os cálculos seguintes.
+
+### O estimador DiD
+
+O estimador de diferenças-em-diferenças compara as variações observadas nos dois grupos:
+
+$$
+\hat\delta_{DiD}
+=
+(\bar Y_{T,1}-\bar Y_{T,0})
+-
+(\bar Y_{C,1}-\bar Y_{C,0}).
+$$
+
+Vamos calcular essas variações diretamente a partir das quatro médias ponderadas.
+
+```{r}
+#| label: calculo-did
+
+# Extrai a média do tratamento antes da expansão
+media_T_antes <- medias |>
+  filter(tratado == 1, depois == 0) |>
+  pull(proporcao)
+
+# Extrai a média do tratamento depois da expansão
+media_T_depois <- medias |>
+  filter(tratado == 1, depois == 1) |>
+  pull(proporcao)
+
+# Extrai a média do controle antes da expansão
+media_C_antes <- medias |>
+  filter(tratado == 0, depois == 0) |>
+  pull(proporcao)
+
+# Extrai a média do controle depois da expansão
+media_C_depois <- medias |>
+  filter(tratado == 0, depois == 1) |>
+  pull(proporcao)
+
+# Calcula as variações em cada grupo
+variacao_T <- media_T_depois - media_T_antes
+variacao_C <- media_C_depois - media_C_antes
+
+# Calcula o estimador DiD
+did <- variacao_T - variacao_C
+
+# Apresenta os resultados em pontos percentuais
+round(
+  100 * c(
+    "Variação no tratamento" = variacao_T,
+    "Variação no controle" = variacao_C,
+    "Diferenças-em-diferenças" = did
+  ),
+  3
+)
+```
+
+### Representação gráfica
+
+O gráfico permite visualizar a evolução das proporções de pessoas sem seguro-saúde nos dois grupos.
+
+```{r}
+#| label: fig-did-medicaid
+#| fig-cap: "Proporção ponderada de pessoas sem seguro-saúde por grupo e ano."
+
+# Prepara os dados para o gráfico
+dados_grafico <- medias |>
+  mutate(
+    ano = if_else(depois == 1, 2015L, 2013L),
+    grupo = if_else(
+      tratado == 1,
+      "Tratamento",
+      "Controle"
+    ),
+    percentual = 100 * proporcao
+  )
+
+# Representa as quatro médias e suas variações
+ggplot(
+  dados_grafico,
+  aes(x = ano, y = percentual, color = grupo, group = grupo)
+) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2.8) +
+  scale_x_continuous(breaks = c(2013, 2015)) +
+  labs(
+    x = "Ano",
+    y = "Pessoas sem seguro-saúde (%)",
+    color = "Grupo"
+  ) +
+  theme_minimal()
+```
+
+A @fig-did-medicaid mostra as mudanças observadas nos dois grupos. Essas mudanças, isoladamente, não demonstram uma relação causal.
+
+## DiD como uma regressão
+
+### Especificação econométrica
+
+O estimador DiD também pode ser obtido por meio do seguinte modelo de regressão linear:
+
+$$
+Y_{ist}
+=
+\beta_0
++
+\beta_1 Tratado_s
++
+\beta_2 Depois_t
++
+\delta(Tratado_s\times Depois_t)
++
+u_{ist}.
+$$
+
+O coeficiente de interesse é $\delta$, associado à interação entre os indicadores `tratado` e `depois`.
+
+### Estimação com o pacote fixest
+
+Estimaremos o modelo utilizando `fixest::feols()`.
+
+O argumento `weights = ~perwt` utiliza os pesos amostrais individuais, enquanto `vcov = ~state` especifica os erros-padrão agrupados por estado.
+
+```{r}
+#| label: regressao-did
+
+# Estima o modelo DiD com pesos e erros-padrão agrupados
+modelo_did <- fixest::feols(
+  uninsured ~ tratado + depois + tratado:depois,
+  data = dados,
+  weights = ~perwt,
+  vcov = ~state
+)
+
+# Exibe os resultados da regressão
+summary(modelo_did)
+```
+
+O coeficiente `tratado:depois` corresponde ao estimador DiD calculado anteriormente.
+
+Vamos verificar numericamente essa equivalência.
+
+```{r}
+#| label: verificacao-did
+
+# Extrai o coeficiente da interação
+coef_did <- unname(
+  coef(modelo_did)["tratado:depois"]
+)
+
+# Compara as duas estimativas
+c(
+  "Dupla diferença" = did,
+  "Coeficiente da regressão" = coef_did
+)
+
+# Verifica a igualdade considerando a precisão numérica
+isTRUE(all.equal(did, coef_did, tolerance = 1e-10))
+```
+
+O último comando deve retornar `TRUE`, confirmando que os dois procedimentos produzem a mesma estimativa, consideradas pequenas diferenças de precisão numérica.
+
+### Inferência estatística
+
+A estimação utiliza erros-padrão agrupados por estado porque a política foi implementada no nível estadual e os erros das observações de um mesmo estado podem estar correlacionados.
+
+Além dos resultados apresentados por `summary(modelo_did)`, calcularemos o intervalo de confiança de 95% para o coeficiente DiD.
+
+```{r}
+#| label: intervalo-did
+
+# Calcula o intervalo de confiança de 95% da interação
+ic_did <- confint(
+  modelo_did,
+  parm = "tratado:depois",
+  level = 0.95
+)
+
+# Apresenta os limites em pontos percentuais
+round(100 * ic_did, 3)
+```
+
+Observe os resultados da regressão e do intervalo de confiança. Consulte o enunciado da atividade para a discussão sobre sua interpretação estatística e causal.
+
+## Questão
+
+### Questão 1 — O contrafactual e a estimativa DiD
+
+Nesta questão, utilizaremos as quatro médias ponderadas calculadas anteriormente para compreender a construção do estimador de diferenças-em-diferenças.
+
+**Não é necessário escrever código R.** Apresente os cálculos solicitados e explique os resultados com suas palavras, utilizando os conceitos e as expressões apresentados na atividade.
+
+::: {.callout-tip icon="false"}
+## Expressões para os cálculos
+
+Considere $T$ o grupo tratado e $C$ o grupo de controle. Os índices $0$ e $1$ representam, respectivamente, os anos de 2013 e 2015.
+
+**Variação observada em cada grupo:**
+
+$$
+\Delta\bar Y_C=\bar Y_{C,1}-\bar Y_{C,0}
+$$
+
+$$
+\Delta\bar Y_T=\bar Y_{T,1}-\bar Y_{T,0}
+$$
+
+**Resultado contrafactual dos estados tratados em 2015:**
+
+$$
+\widehat{\bar Y}_{T,1}^{(0)}
+=\bar Y_{T,0}+\Delta\bar Y_C
+$$
+
+**Estimador de diferenças-em-diferenças:**
+
+$$
+\widehat{\delta}_{DiD}
+=\Delta\bar Y_T-\Delta\bar Y_C
+$$
+
+Lembre-se de que o contrafactual representa o resultado que estimamos para os estados tratados **na ausência da expansão do Medicaid**, sob a hipótese de tendências paralelas.
+
+Para escrever uma porcentagem dentro de uma expressão matemática em LaTeX, utilize `\%`. Por exemplo, `10\%` será exibido como $10\%$.
+:::
+
+**a)** Calcule a variação da proporção de pessoas sem seguro-saúde no grupo de controle entre 2013 e 2015.
+
+Utilize essa variação para estimar a proporção contrafactual de pessoas sem seguro-saúde nos estados tratados em 2015.
+
+**Resposta:**
+
+$$
+\begin{aligned}
+\Delta\bar Y_C
+&=\bar Y_{C,1}-\bar Y_{C,0}\\
+&= 21,36 - 26,13 = -4,77 \text{ pontos percentuais}.
+\end{aligned}
+$$
+
+$$
+\begin{aligned}
+\widehat{\bar Y}_{T,1}^{(0)}
+&=\bar Y_{T,0}+\Delta\bar Y_C\\
+&= 19,94 - 4,77 = 15,17 \text{ pontos percentuais}.
+\end{aligned}
+$$
+
+A variação da proporção de pessoas sem seguro-saúde nos estados do grupo de controle foi de -4,77 pontos percentuais entre 2013 e 2015. Caso os estados do grupo tratado não tivessem aderido ao programa, estima-se que a proporção de pessoas sem seguro-saúde nesses estados seria de 15,17% em 2015. Esse valor representa o resultado contrafactual, estimado com base na hipótese de tendências paralelas do método de Diferenças em Diferenças.
+
+---
+
+**b)** Compare o contrafactual estimado com a proporção efetivamente observada nos estados tratados em 2015. Subtraia o valor contrafactual do valor observado e interprete a diferença obtida.
+
+**Resposta:**
+
+$$
+\begin{aligned}
+\bar Y_{T,1}-\widehat{\bar Y}_{T,1}^{(0)}
+&= 10,6 - 15,17\\
+&= -4,57 \text{ pontos percentuais}.
+\end{aligned}
+$$
+
+Após a adesão ao programa, a proporção de pessoas sem seguro-saúde nos estados tratados foi de 4,57 pontos percentuais menor do que seria esperado na ausência do tratamento.
+
+---
+
+**c)** Utilize as variações observadas nos grupos tratado e de controle para calcular o estimador DiD.
+
+Compare esse resultado com o obtido no item **b** e explique:
+
+- Por que os dois procedimentos produzem o mesmo resultado?
+- Por que não seria adequado atribuir toda a redução observada nos estados tratados à expansão do Medicaid?
+
+**Resposta:**
+
+$$
+\begin{aligned}
+\Delta\bar Y_T
+&=\bar Y_{T,1}-\bar Y_{T,0}\\
+&= 10,598 - 19,941 \approx -9,34 \text{ pontos percentuais}.
+\end{aligned}
+$$
+
+$$
+\begin{aligned}
+\widehat{\delta}_{DiD}
+&=\Delta\bar Y_T-\Delta\bar Y_C\\
+&= -9,34 - (-4,77) = -4,57\text{ pontos percentuais}.
+\end{aligned}
+$$
+
+**Por que os dois procedimentos produzem o mesmo resultado?**
+
+Os resultados são iguais porque os procedimentos representam formas equivalentes de calcular o efeito do tratamento. No primeiro, comparamos a proporção efetivamente observada no grupo tratado com o resultado contrafactual estimado; já no segundo, subtraímos a variação do grupo de controle da variação do grupo tratado. As duas formas isolam a diferença atribuída ao tratamento, considerando a evolução que também ocorreria na ausência do programa.
+
+**Por que não podemos atribuir toda a redução observada à expansão do Medicaid?**
+
+Não é adequado atribuir toda a redução observada nos estados tratados à expansão do Medicaid porque parte dessa redução também ocorreu nos estados do grupo de controle, que não aderiram ao programa. Isso indica que outros fatores também podem ter contribuído para diminuir a proporção de pessoas sem seguro-saúde, já que são estados comparáveis.
